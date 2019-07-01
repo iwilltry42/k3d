@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -61,8 +62,41 @@ func importImage(clusterName string, images []string) error {
 
 	// *** second, import the images using ctr in the k3d nodes
 
+	// import in each node separately
+	// TODO: create a shared image cache volume, so we don't need to import it separately
+	var waitGroup sync.WaitGroup
+	for _, container := range containerList {
+		waitGroup.Add(1)
+		go ctrImageImport(container, imageBasePathRemote+imageTarName, images, &waitGroup)
+		// if err := ctrImageImport(container, imageBasePathRemote+imageTarName, images); err != nil {
+		// 	log.Printf("WARNING: couldn't import images [%s] in container [%s]\n%+v", images, container.Names[0], err)
+		// 	continue
+		// }
+	}
+	waitGroup.Wait()
+
+	log.Printf("INFO: Successfully imported image [%s] in all nodes of cluster [%s]", images, clusterName)
+
+	log.Println("INFO: Cleaning up tarball...")
+	if err := os.Remove(imageBasePathLocal + imageTarName); err != nil {
+		return fmt.Errorf("ERROR: Couldn't remove tarball [%s]\n%+v", imageBasePathLocal+imageTarName, err)
+	}
+	log.Println("INFO: ...Done")
+
+	return nil
+}
+
+func ctrImageImport(container types.Container, imageTarPath string, images []string, waitGroup *sync.WaitGroup) {
+
+	// get a docker client
+	ctx := context.Background()
+	docker, err := client.NewEnvClient()
+	if err != nil {
+		log.Println(fmt.Errorf("ERROR: couldn't create docker client\n%+v", err))
+	}
+
 	// create exec configuration
-	cmd := []string{"ctr", "image", "import", imageBasePathRemote + imageTarName}
+	cmd := []string{"ctr", "image", "import", imageTarPath}
 	execConfig := types.ExecConfig{
 		AttachStderr: true,
 		AttachStdout: true,
@@ -79,51 +113,37 @@ func importImage(clusterName string, images []string) error {
 		Tty: true,
 	}
 
-	// import in each node separately
-	// TODO: create a shared image cache volume, so we don't need to import it separately
-	for _, container := range containerList {
+	containerName := container.Names[0][1:] // trimming the leading "/" from name
+	log.Printf("INFO: Importing image [%s] in container [%s]", images, containerName)
 
-		containerName := container.Names[0][1:] // trimming the leading "/" from name
-		log.Printf("INFO: Importing image [%s] in container [%s]", images, containerName)
-
-		// create exec configuration
-		execResponse, err := docker.ContainerExecCreate(ctx, container.ID, execConfig)
-		if err != nil {
-			return fmt.Errorf("ERROR: Failed to create exec command for container [%s]\n%+v", containerName, err)
-		}
-
-		// attach to exec process in container
-		containerConnection, err := docker.ContainerExecAttach(ctx, execResponse.ID, execAttachConfig)
-		if err != nil {
-			return fmt.Errorf("ERROR: couldn't attach to container [%s]\n%+v", containerName, err)
-		}
-		defer containerConnection.Close()
-
-		// start exec
-		err = docker.ContainerExecStart(ctx, execResponse.ID, execStartConfig)
-		if err != nil {
-			return fmt.Errorf("ERROR: couldn't execute command in container [%s]\n%+v", containerName, err)
-		}
-
-		// get output from container
-		content, err := ioutil.ReadAll(containerConnection.Reader)
-		if err != nil {
-			return fmt.Errorf("ERROR: couldn't read output from container [%s]\n%+v", containerName, err)
-		}
-
-		// example output "unpacking image........ ...done"
-		if !strings.Contains(string(content), "done") {
-			return fmt.Errorf("ERROR: seems like something went wrong using `ctr image import` in container [%s]. Full output below:\n%s", containerName, string(content))
-		}
+	// create exec configuration
+	execResponse, err := docker.ContainerExecCreate(ctx, container.ID, execConfig)
+	if err != nil {
+		log.Println(fmt.Errorf("ERROR: Failed to create exec command for container [%s]\n%+v", containerName, err))
 	}
 
-	log.Printf("INFO: Successfully imported image [%s] in all nodes of cluster [%s]", images, clusterName)
-
-	log.Println("INFO: Cleaning up tarball...")
-	if err := os.Remove(imageBasePathLocal + imageTarName); err != nil {
-		return fmt.Errorf("ERROR: Couldn't remove tarball [%s]\n%+v", imageBasePathLocal+imageTarName, err)
+	// attach to exec process in container
+	containerConnection, err := docker.ContainerExecAttach(ctx, execResponse.ID, execAttachConfig)
+	if err != nil {
+		log.Println(fmt.Errorf("ERROR: couldn't attach to container [%s]\n%+v", containerName, err))
 	}
-	log.Println("INFO: ...Done")
+	defer containerConnection.Close()
 
-	return nil
+	// start exec
+	err = docker.ContainerExecStart(ctx, execResponse.ID, execStartConfig)
+	if err != nil {
+		log.Println(fmt.Errorf("ERROR: couldn't execute command in container [%s]\n%+v", containerName, err))
+	}
+
+	// get output from container
+	content, err := ioutil.ReadAll(containerConnection.Reader)
+	if err != nil {
+		log.Println(fmt.Errorf("ERROR: couldn't read output from container [%s]\n%+v", containerName, err))
+	}
+
+	// example output "unpacking image........ ...done"
+	if !strings.Contains(string(content), "done") {
+		log.Println(fmt.Errorf("ERROR: seems like something went wrong using `ctr image import` in container [%s]. Full output below:\n%s", containerName, string(content)))
+	}
+	waitGroup.Done()
 }
