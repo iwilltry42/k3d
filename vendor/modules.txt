@@ -6,7 +6,7 @@ github.com/containerd/containerd/errdefs
 github.com/docker/distribution/reference
 github.com/docker/distribution/registry/api/errcode
 github.com/docker/distribution/digestset
-# github.com/docker/docker v0.7.3-0.20190723064612-a9dc697fd2a5
+# github.com/docker/docker v0.7.3-0.20190902134524-d99b0302d3e7
 github.com/docker/docker/api/types
 github.com/docker/docker/api/types/container
 github.com/docker/docker/api/types/filters
