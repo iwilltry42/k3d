@@ -93,7 +93,11 @@ func CreateCluster(c *cli.Context) error {
 	// environment variables
 	env := []string{"K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml"}
 	env = append(env, c.StringSlice("env")...)
-	env = append(env, fmt.Sprintf("K3S_CLUSTER_SECRET=%s", GenerateRandomString(20)))
+	if !c.Bool("agent-only") {
+		env = append(env, fmt.Sprintf("K3S_CLUSTER_SECRET=%s", GenerateRandomString(20)))
+	} else {
+		env = append(env, fmt.Sprintf("K3S_CLUSTER_SECRET=%s", c.String("secret")), fmt.Sprintf("K3S_URL=https://%s", c.String("server")))
+	}
 
 	// k3s server arguments
 	// TODO: --port will soon be --api-port since we want to re-use --port for arbitrary port mappings
@@ -105,7 +109,6 @@ func CreateCluster(c *cli.Context) error {
 		return err
 	}
 
-	k3AgentArgs := []string{}
 	k3sServerArgs := []string{"--https-listen-port", apiPort.Port}
 
 	// When the 'host' is not provided by --api-port, try to fill it using Docker Machine's IP address.
@@ -130,6 +133,7 @@ func CreateCluster(c *cli.Context) error {
 		k3sServerArgs = append(k3sServerArgs, c.StringSlice("server-arg")...)
 	}
 
+	k3AgentArgs := []string{}
 	if c.IsSet("agent-arg") {
 		k3AgentArgs = append(k3AgentArgs, c.StringSlice("agent-arg")...)
 	}
@@ -161,6 +165,8 @@ func CreateCluster(c *cli.Context) error {
 		ServerArgs:        k3sServerArgs,
 		Verbose:           c.GlobalBool("verbose"),
 		Volumes:           volumes,
+		AgentOnly:         c.Bool("agent-only"),
+		ServerURL:         c.String("server"),
 	}
 
 	// create the server
@@ -169,10 +175,13 @@ func CreateCluster(c *cli.Context) error {
 	// create the directory where we will put the kubeconfig file by default (when running `k3d get-config`)
 	createClusterDir(c.String("name"))
 
-	dockerID, err := createServer(clusterSpec)
-	if err != nil {
-		deleteCluster()
-		return err
+	dockerID := ""
+	if !c.Bool("agent-only") {
+		dockerID, err = createServer(clusterSpec)
+		if err != nil {
+			deleteCluster()
+			return err
+		}
 	}
 
 	ctx := context.Background()
@@ -186,7 +195,7 @@ func CreateCluster(c *cli.Context) error {
 	// TODO: also wait for worker nodes
 	start := time.Now()
 	timeout := time.Duration(c.Int("wait")) * time.Second
-	for c.IsSet("wait") {
+	for c.IsSet("wait") && !c.Bool("agent-only") {
 		// not running after timeout exceeded? Rollback and delete everything.
 		if timeout != 0 && time.Now().After(start.Add(timeout)) {
 			deleteCluster()

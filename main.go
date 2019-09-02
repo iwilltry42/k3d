@@ -133,7 +133,33 @@ func main() {
 					Name:  "auto-restart",
 					Usage: "Set docker's --restart=unless-stopped flag on the containers",
 				},
+				cli.BoolFlag{
+					Name:  "agent-only",
+					Usage: "Do not create the server",
+				},
+				cli.StringFlag{
+					Name:  "server",
+					Usage: "Server connection string for agent-only cluster",
+				},
+				cli.StringFlag{
+					Name:  "secret",
+					Usage: "Server connection secret for agent-only cluster",
+				},
 			},
+			/*Subcommands: cli.Commands{
+				cli.Command{
+					Name:  "agent",
+					Usage: "Create one or more k3s agent containers",
+					Flags: []cli.Flag{
+						cli.IntFlag{
+							Name:  "replicas",
+							Value: 1,
+							Usage: "Specify how many agents you want to create",
+						},
+					},
+					Action: run.CreateAgent,
+				},
+			},*/
 			Action: run.CreateCluster,
 		},
 		{

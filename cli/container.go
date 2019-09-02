@@ -12,10 +12,12 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 )
@@ -32,6 +34,8 @@ type ClusterSpec struct {
 	ServerArgs        []string
 	Verbose           bool
 	Volumes           []string
+	AgentOnly         bool
+	ServerURL         string
 }
 
 func startContainer(verbose bool, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string) (string, error) {
@@ -156,8 +160,7 @@ func createWorker(spec *ClusterSpec, postfix int) (string, error) {
 	containerLabels["cluster"] = spec.ClusterName
 
 	containerName := GetContainerName("worker", spec.ClusterName, postfix)
-
-	env := append(spec.Env, fmt.Sprintf("K3S_URL=https://k3d-%s-server:%s", spec.ClusterName, spec.APIPort.Port))
+	env := spec.Env
 
 	// ports to be assigned to the server belong to roles
 	// all, server or <server-container-name>
@@ -192,12 +195,44 @@ func createWorker(spec *ClusterSpec, postfix int) (string, error) {
 		hostConfig.Binds = spec.Volumes
 	}
 
-	networkingConfig := &network.NetworkingConfig{
-		EndpointsConfig: map[string]*network.EndpointSettings{
+	networkingConfig := &network.NetworkingConfig{}
+
+	// if we only create agent(s) and have a server url provided for connection,
+	// we try to connect to the server's docker network
+	// TODO: distinguish between k3d and k3s server connection string
+	if spec.AgentOnly && spec.ServerURL != "" {
+
+		ctx := context.Background()
+		docker, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		if err != nil {
+			return "", err
+		}
+
+		serverName := strings.Split(spec.ServerURL, ":")[0]
+		inspectResponse, err := docker.ContainerInspect(ctx, serverName)
+		if err != nil {
+			return "", err
+		}
+		serverClusterName := inspectResponse.Config.Labels["cluster"]
+		filters := filters.NewArgs()
+		filters.Add("label", fmt.Sprintf("cluster=%s", serverClusterName))
+		serverNetworks, err := docker.NetworkList(ctx, types.NetworkListOptions{
+			Filters: filters,
+		})
+		if err != nil {
+			return "", err
+		}
+		networkingConfig.EndpointsConfig = map[string]*network.EndpointSettings{
+			serverNetworks[0].Name: {},
+		}
+		log.Println("Connecting to", serverNetworks[0].Name)
+	} else {
+		env = append(env, fmt.Sprintf("K3S_URL=https://k3d-%s-server:%s", spec.ClusterName, spec.APIPort.Port))
+		networkingConfig.EndpointsConfig = map[string]*network.EndpointSettings{
 			k3dNetworkName(spec.ClusterName): {
 				Aliases: []string{containerName},
 			},
-		},
+		}
 	}
 
 	config := &container.Config{
