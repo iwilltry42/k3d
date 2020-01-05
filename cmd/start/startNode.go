@@ -1,5 +1,5 @@
 /*
-Copyright © 2019 Thorsten Klein <iwilltry42@gmail.com>
+Copyright © 2020 The k3d Author(s)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
