@@ -1,29 +1,29 @@
 dist: bionic
 language: go
 env:
-- GO111MODULE=on
+  - GO111MODULE=on
 go:
-- 1.13.x
+  - 1.13.x
 git:
   depth: 1
 install: true
 before_script:
-- curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GOPATH}/bin v1.20.0
-- go get github.com/mitchellh/gox@v1.0.1
+  - curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ${GOPATH}/bin v1.22.2
+  - go get github.com/mitchellh/gox@v1.0.1
 script:
-- make fmt check build-cross
+  - make fmt check build-cross
 deploy:
   provider: releases
   skip_cleanup: true
   api_key:
     secure: VFb0jmL6t+cuKWAGC5OLeseTJrK3CakD5Laeyp0JVG/o3/cYgHP0lIeDmJJMZL/Luxm5aL8QHsCRfQoMBAnj6Q8hchI9rbcYhFZzuFJYyDxjcrPm0+kM3yiK14lQZNvksy2ZSsO7D63c8x9sQVrEus4idVTUoxrpSXLM2eVjl6W0O2RdZvLsxgaLPwV1ufpihrqbXdEUjt/YSYpHiC5gS3o+FcyMGucJQdN/L7p6jyAqVgg4+t8bdyWj6+MEG4p8lmWhhbGzDo38iMxtCBu+nDHRsbivay3eJZ643VguX0lj62Vt5KUTcVJntmZqQ2UF6FoEVUPOegkrSeoiMuOH1+nYwcsfMFijMkrcFhb6bAisJJd6agdhFWXiSwL88FQkJh0DqeA0tFFIzDbTS/AZTY4Li8bWng3aCBgSXiMzIBf0es+wMDw0gwhfH44Y/RAsKSQJ/Lln00AaVzkOkOWOmu5Ks0CVYDy0M5QDQOCW2E9TIb7WdIMh3aNCkZi+rGovigejJv3vUZqkN03Og07Hbrjgfg28iY3isIt3soOrVqek2hJJFnKjUhhv2OhJm3z6FpTyMViUtSmJ+LTiBjpyiWC4QuaITDadCJTxZQwobhI+18c2Zi5/HjTX1pgD1wk3quv9R4bGjVINenefG6xxaNj+CeFTfrQnnHuXOL50828=
   file:
-  - _dist/k3d-darwin-amd64
-  - _dist/k3d-linux-386
-  - _dist/k3d-linux-amd64
-  - _dist/k3d-linux-arm
-  - _dist/k3d-linux-arm64
-  - _dist/k3d-windows-amd64.exe
+    - _dist/k3d-darwin-amd64
+    - _dist/k3d-linux-386
+    - _dist/k3d-linux-amd64
+    - _dist/k3d-linux-arm
+    - _dist/k3d-linux-arm64
+    - _dist/k3d-windows-amd64.exe
   on:
     repo: rancher/k3d
     tags: true

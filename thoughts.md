@@ -26,7 +26,7 @@ k3d
 
 ## Overview
 
-- `cmd/`: everything around the CLI of k3 = human interface, printed output (e.g. list of clusters)
+- `cmd/`: everything around the CLI of k3d = human interface, printed output (e.g. list of clusters)
 - `pkg/`: everything else, can be used as a module from other Go projects
   - `cluster/`: everything around managing cluster components
   - `runtimes/`: translate k3d types (node, cluster, etc.) to container runtime specific types and manage them
@@ -219,7 +219,6 @@ Here's how k3d types should translate to a runtime type:
 - all nodes
   - ENV
     - `K3S_TOKEN` for node authentication
-      - TODO: replaces `K3S_CLUSTER_SECRET`
   - CMD/ARGS
     - nothing special
   - Runtime Configuration

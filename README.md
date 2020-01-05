@@ -7,7 +7,9 @@
 
 k3s is the lightweight Kubernetes distribution by Rancher: [rancher/k3s](https://github.com/rancher/k3s)
 
-This repository is based on [@zeerorg](https://github.com/zeerorg/)'s [zeerorg/k3s-in-docker](https://github.com/zeerorg/k3s-in-docker), reimplemented in Go by [@iwilltry42](https://github.com/iwilltry42/) in [iwilltry42/k3d](https://github.com/iwilltry42/k3d), which is now [rancher/k3d](https://github.com/rancher/k3d).
+k3d creates containerized k3s clusters. This means, that you can spin up a multi-node k3s cluster on a single machine using docker.
+
+This repository is based on [@zeerorg](https://github.com/zeerorg/)'s [zeerorg/k3s-in-docker](https://github.com/zeerorg/k3s-in-docker), reimplemented in Go by [@iwilltry42](https://github.com/iwilltry42/) in [iwilltry42/k3d](https://github.com/iwilltry42/k3d), which got adopted by Rancher in[rancher/k3d](https://github.com/rancher/k3d).
 
 ## Requirements
 
@@ -17,6 +19,7 @@ This repository is based on [@zeerorg](https://github.com/zeerorg/)'s [zeerorg/k
 
 You have several options there:
 
+- via brew (homebrew/linuxbrew): `brew install k3d`
 - use the install script to grab the latest release:
   - wget: `wget -q -O - https://raw.githubusercontent.com/rancher/k3d/master/install.sh | bash`
   - curl: `curl -s https://raw.githubusercontent.com/rancher/k3d/master/install.sh | bash`
