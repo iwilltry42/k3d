@@ -75,7 +75,7 @@ func init() {
 	// add persistent flags (present to all subcommands)
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.k3d/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&flags.debugLogging, "verbose", false, "Enable verbose output (debug logging)")
-	rootCmd.PersistentFlags().StringVarP(&flags.runtime, "runtime", "r", "docker", "Choose a container runtime environment [docker, containerd]")
+	rootCmd.PersistentFlags().StringVarP(&flags.runtime, "runtime", "r", "docker", "Choose a container runtime environment [docker, containerd, k3c]")
 
 	// add local flags
 

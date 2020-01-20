@@ -27,6 +27,7 @@ import (
 
 	"github.com/rancher/k3d/pkg/runtimes/containerd"
 	"github.com/rancher/k3d/pkg/runtimes/docker"
+	"github.com/rancher/k3d/pkg/runtimes/k3c"
 	k3d "github.com/rancher/k3d/pkg/types"
 )
 
@@ -34,9 +35,10 @@ import (
 var Runtimes = map[string]Runtime{
 	"docker":     docker.Docker{},
 	"containerd": containerd.Containerd{},
+	"k3c":        k3c.K3c{},
 }
 
-// Runtime defines an interface that can be implemented for various container runtime environments (docker, containerd, etc.)
+// Runtime defines an interface that can be implemented for various container runtime environments (docker, containerd, k3c etc.)
 type Runtime interface {
 	CreateNode(*k3d.Node) error
 	DeleteNode(*k3d.Node) error
