@@ -47,7 +47,7 @@ func (d K3c) CreateNode(node *k3d.Node) error {
 // DeleteNode deletes an existing k3d node
 func (d K3c) DeleteNode(node *k3d.Node) error {
 	log.Debugln("k3c.DeleteNode...")
-	
+
 	return nil
 }
 

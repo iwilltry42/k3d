@@ -2,6 +2,8 @@ module github.com/rancher/k3d
 
 go 1.13
 
+replace github.com/rancher/k3c => /home/thklein/Git/github.com/rancher/k3c
+
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
 	github.com/Microsoft/go-winio v0.4.14 // indirect
@@ -40,5 +42,3 @@ require (
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gotest.tools v2.2.0+incompatible // indirect
 )
-
-replace github.com/rancher/k3c => /home/thklein/Git/github.com/rancher/k3c

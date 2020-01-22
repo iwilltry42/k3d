@@ -35,7 +35,7 @@ BINARIES  := k3d
 
 # Go Package required
 PKG_GOX := github.com/mitchellh/gox@v1.0.1
-PKG_GOLANGCI_LINT_VERSION := 1.22.2
+PKG_GOLANGCI_LINT_VERSION := 1.23.1
 PKG_GOLANGCI_LINT := github.com/golangci/golangci-lint/cmd/golangci-lint@v${PKG_GOLANGCI_LINT_VERSION}
 
 # configuration adjustments for golangci-lint
@@ -48,7 +48,7 @@ export GO111MODULE=on
 # DIRS defines a single level directly, we only look at *.go in this directory.
 # REC_DIRS defines a source code tree. All go files are analyzed recursively.
 DIRS :=  .
-REC_DIRS := cmd
+REC_DIRS := cmd pkg
 
 # Rules for finding all go source files using 'DIRS' and 'REC_DIRS'
 GO_SRC := $(foreach dir,$(DIRS),$(wildcard $(dir)/*.go))

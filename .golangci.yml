@@ -1,0 +1,5 @@
+run:
+
+  modules-download-mode: vendor  
+
+  skip-dirs-use-default: true
