@@ -23,8 +23,10 @@ THE SOFTWARE.
 package cluster
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rancher/k3d/pkg/runtimes"
 	k3d "github.com/rancher/k3d/pkg/types"
@@ -198,4 +200,41 @@ func GetNode(node *k3d.Node, runtime runtimes.Runtime) (*k3d.Node, error) {
 	}
 
 	return node, nil
+}
+
+// WaitForNodeLogMessage follows the logs of a node container and returns if it finds a specific line in there (or timeout is reached)
+func WaitForNodeLogMessage(runtime runtimes.Runtime, node *k3d.Node, message string, timeout time.Duration) error {
+	start := time.Now()
+	for {
+
+		// return error if we've reached the timeout without having read the message
+		if timeout != 0 && time.Now().After(start.Add(timeout)) {
+			return fmt.Errorf("Timed out waiting for log message '%s' from node '%s'", message, node.Name)
+		}
+
+		log.Debugf("Waiting for log message '%s' from node '%s'...", message, node.Name)
+
+		// read the logs
+		out, err := runtime.GetNodeLogs(node)
+		if err != nil {
+			if out != nil {
+				out.Close()
+			}
+			log.Errorf("Failed waiting for log message '%s' from node '%s'", message, node.Name)
+			return err
+		}
+		defer out.Close()
+
+		buf := new(bytes.Buffer)
+		nRead, _ := buf.ReadFrom(out)
+		out.Close()
+		output := buf.String()
+
+		// check if we can find the specified line in the log
+		if nRead > 0 && strings.Contains(output, message) {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return nil
 }

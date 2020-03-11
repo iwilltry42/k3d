@@ -87,10 +87,13 @@ const DefaultConfigDirName = ".k3d" // should end up in $HOME/
 // DefaultKubeconfigPrefix defines the default prefix for kubeconfig files
 const DefaultKubeconfigPrefix = DefaultObjectNamePrefix + "-kubeconfig"
 
-// ClusterCreationOpts describe a set of options one can set when creating a cluster
-type ClusterCreationOpts struct {
-	DisableImageVolume bool
-	WaitForMaster      int
+// CreateClusterOpts describe a set of options one can set when creating a cluster
+type CreateClusterOpts struct {
+	DisableImageVolume  bool
+	DisableLoadbalancer bool
+	WaitForMaster       int
+	K3sServerArgs       []string
+	K3sAgentArgs        []string
 }
 
 // ClusterNetwork describes a network which a cluster is running in
@@ -101,14 +104,14 @@ type ClusterNetwork struct {
 
 // Cluster describes a k3d cluster
 type Cluster struct {
-	Name                string               `yaml:"name" json:"name,omitempty"`
-	Network             ClusterNetwork       `yaml:"network" json:"network,omitempty"`
-	Secret              string               `yaml:"cluster_secret" json:"clusterSecret,omitempty"`
-	Nodes               []*Node              `yaml:"nodes" json:"nodes,omitempty"`
-	InitNode            *Node                // init master node
-	MasterLoadBalancer  *ClusterLoadbalancer `yaml:"master_loadbalancer" json:"masterLoadBalancer,omitempty"`
-	ExternalDatastore   ExternalDatastore    `yaml:"external_datastore" json:"externalDatastore,omitempty"`
-	ClusterCreationOpts *ClusterCreationOpts `yaml:"options" json:"options,omitempty"`
+	Name               string               `yaml:"name" json:"name,omitempty"`
+	Network            ClusterNetwork       `yaml:"network" json:"network,omitempty"`
+	Secret             string               `yaml:"cluster_secret" json:"clusterSecret,omitempty"`
+	Nodes              []*Node              `yaml:"nodes" json:"nodes,omitempty"`
+	InitNode           *Node                // init master node
+	MasterLoadBalancer *ClusterLoadbalancer `yaml:"master_loadbalancer" json:"masterLoadBalancer,omitempty"`
+	ExternalDatastore  ExternalDatastore    `yaml:"external_datastore" json:"externalDatastore,omitempty"`
+	CreateClusterOpts  *CreateClusterOpts   `yaml:"options" json:"options,omitempty"`
 }
 
 // Node describes a k3d node

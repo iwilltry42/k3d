@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	k3drt "github.com/rancher/k3d/pkg/runtimes"
@@ -80,7 +81,7 @@ func CreateCluster(cluster *k3d.Cluster, runtime k3drt.Runtime) error {
 	 * Cluster-Wide volumes
 	 * - image volume (for importing images)
 	 */
-	if !cluster.ClusterCreationOpts.DisableImageVolume {
+	if !cluster.CreateClusterOpts.DisableImageVolume {
 		imageVolumeName := fmt.Sprintf("%s-%s-images", k3d.DefaultObjectNamePrefix, cluster.Name)
 		if err := runtime.CreateVolume(imageVolumeName, map[string]string{"k3d.cluster": cluster.Name}); err != nil {
 			log.Errorln("Failed to create image volume '%s' for cluster '%s'", imageVolumeName, cluster.Name)
@@ -181,6 +182,11 @@ func CreateCluster(cluster *k3d.Cluster, runtime k3drt.Runtime) error {
 	}
 
 initNodeFinished:
+
+	// vars to support waiting for master nodes to be ready
+	var waitForMasterWaitgroup sync.WaitGroup
+	waitForMasterErrChan := make(chan error, 1) // FIXME: we should do something different here, e.g. concurrently read from the channel and append to a slice of errors
+
 	// create all other nodes, but skip the init node
 	for _, node := range cluster.Nodes {
 		if node.Role == k3d.MasterRole {
@@ -201,6 +207,41 @@ initNodeFinished:
 		}
 		if err := nodeSetup(node, suffix); err != nil {
 			return err
+		}
+
+		// asynchronously wait for this master node to be ready (by checking the logs for a specific log mesage)
+		if node.Role == k3d.MasterRole && cluster.CreateClusterOpts.WaitForMaster >= 0 {
+			waitForMasterWaitgroup.Add(1)
+			go func(masterNode *k3d.Node) {
+				log.Debugf("Starting to wait for master node '%s'", masterNode.Name)
+				// TODO: it may be better to give endtime=starttime+timeout here so that there is no difference between the instances (go func may be called with a few (milli-)seconds difference)
+				err := WaitForNodeLogMessage(runtime, masterNode, "Wrote kubeconfig", (time.Duration(cluster.CreateClusterOpts.WaitForMaster) * time.Second))
+				waitForMasterErrChan <- err
+				if err == nil {
+					log.Debugf("Master Node '%s' ready", masterNode.Name)
+				}
+			}(node)
+		}
+	}
+
+	// block until all masters are ready (if --wait was set) and collect errors if not
+	if cluster.CreateClusterOpts.WaitForMaster >= 0 {
+		errs := []error{}
+		go func() {
+			for elem := range waitForMasterErrChan {
+				if elem != nil {
+					errs = append(errs, elem)
+				}
+				waitForMasterWaitgroup.Done()
+			}
+		}()
+		waitForMasterWaitgroup.Wait()
+		if len(errs) != 0 {
+			log.Errorln("Failed to bring up all master nodes in time. Check the logs:")
+			for _, e := range errs {
+				log.Errorln(">>> ", e)
+			}
+			return fmt.Errorf("Failed to bring up cluster") // TODO: in case of failure, we should rollback
 		}
 	}
 

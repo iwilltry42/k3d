@@ -1,4 +1,5 @@
-/*
+/*Package create ...
+
 Copyright © 2020 The k3d Author(s)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,16 +37,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// createClusterOpts describes a set of options set via CLI flags
-type createClusterOpts struct {
-	K3sServerArgs []string
-	K3sAgentArgs  []string
-}
-
 // NewCmdCreateCluster returns a new cobra command
 func NewCmdCreateCluster() *cobra.Command {
 
-	opts := &createClusterOpts{}
+	createClusterOpts := &k3d.CreateClusterOpts{}
 
 	// create new command
 	cmd := &cobra.Command{
@@ -54,9 +49,15 @@ func NewCmdCreateCluster() *cobra.Command {
 		Long:  `Create a new k3s cluster with containerized nodes (k3s in docker).`,
 		Args:  cobra.ExactArgs(1), // exactly one cluster name can be set // TODO: if not specified, use k3d.DefaultClusterName
 		Run: func(cmd *cobra.Command, args []string) {
-			runtime, cluster := parseCreateClusterCmd(cmd, args, opts)
+			runtime, cluster := parseCreateClusterCmd(cmd, args, createClusterOpts)
 			if err := k3dCluster.CreateCluster(cluster, runtime); err != nil {
-				log.Fatalln(err)
+				log.Errorln(err)
+				log.Errorln("Failed to create cluster >>> Rolling Back")
+				if err := k3dCluster.DeleteCluster(cluster, runtime); err != nil {
+					log.Errorln(err)
+					log.Fatalln("Cluster creation FAILED, also FAILED to rollback changes!")
+				}
+				log.Fatalln("Cluster creation FAILED, all changes have been rolled back!")
 			}
 			log.Infof("Cluster '%s' created successfully. You can now use it like this:", cluster.Name)
 			fmt.Printf("export KUBECONFIG=$(%s get kubeconfig %s)\n", os.Args[0], cluster.Name)
@@ -76,15 +77,15 @@ func NewCmdCreateCluster() *cobra.Command {
 	cmd.Flags().String("secret", "", "Specify a cluster secret. By default, we generate one.")
 	cmd.Flags().StringArrayP("volume", "v", nil, "Mount volumes into the nodes (Format: `--volume [SOURCE:]DEST[@NODEFILTER[;NODEFILTER...]]`\n - Example: `k3d create -w 2 -v /my/path@worker[0,1] -v /tmp/test:/tmp/other@master[0]`")
 	cmd.Flags().StringArrayP("port", "p", nil, "Map ports from the node containers to the host (Format: `[HOST:][HOSTPORT:]CONTAINERPORT[/PROTOCOL][@NODEFILTER]`)\n - Example: `k3d create -w 2 -p 8080:80@worker[0] -p 8081@worker[1]`")
-	cmd.Flags().Int("wait", -1, "Wait for a specified amount of time (seconds, >= 0, 0 = forever) for the master(s) to be ready or timeout and rollback before returning")
+	cmd.Flags().IntVar(&createClusterOpts.WaitForMaster, "wait", -1, "Wait for a specified amount of time (seconds >= 0, where 0 means forever) for the master(s) to be ready or timeout and rollback before returning")
 
 	/* Image Importing */
-	cmd.Flags().Bool("no-image-volume", false, "Disable the creation of a volume for importing images")
+	cmd.Flags().BoolVar(&createClusterOpts.DisableImageVolume, "no-image-volume", false, "Disable the creation of a volume for importing images")
 
 	/* Multi Master Configuration */ // TODO: to implement (whole multi master thingy)
 	// multi-master - general
-	cmd.Flags().Bool("no-lb", false, "[WIP] Disable automatic deployment of a load balancer in Multi-Master setups")                         // TODO: to implement
-	cmd.Flags().String("lb-port", "0.0.0.0:6443", "[WIP] Specify port to be exposed by the master load balancer (Format: `[HOST:]HOSTPORT)") // TODO: to implement
+	cmd.Flags().BoolVar(&createClusterOpts.DisableLoadbalancer, "no-lb", false, "[WIP] Disable automatic deployment of a load balancer in Multi-Master setups") // TODO: to implement
+	cmd.Flags().String("lb-port", "0.0.0.0:6443", "[WIP] Specify port to be exposed by the master load balancer (Format: `[HOST:]HOSTPORT)")                    // TODO: to implement
 
 	// multi-master - datastore
 	cmd.Flags().String("datastore-endpoint", "", "[WIP] Specify external datastore endpoint (e.g. for multi master clusters)")
@@ -98,8 +99,8 @@ func NewCmdCreateCluster() *cobra.Command {
 	*/
 
 	/* k3s */ // TODO: to implement extra args
-	cmd.Flags().StringArrayVar(&opts.K3sServerArgs, "k3s-server-arg", nil, "Additional args passed to the `k3s server` command on master nodes (new flag per arg)")
-	cmd.Flags().StringArrayVar(&opts.K3sAgentArgs, "k3s-agent-arg", nil, "Additional args passed to the `k3s agent` command on worker nodes (new flag per arg)")
+	cmd.Flags().StringArrayVar(&createClusterOpts.K3sServerArgs, "k3s-server-arg", nil, "Additional args passed to the `k3s server` command on master nodes (new flag per arg)")
+	cmd.Flags().StringArrayVar(&createClusterOpts.K3sAgentArgs, "k3s-agent-arg", nil, "Additional args passed to the `k3s agent` command on worker nodes (new flag per arg)")
 
 	/* Subcommands */
 
@@ -108,7 +109,7 @@ func NewCmdCreateCluster() *cobra.Command {
 }
 
 // parseCreateClusterCmd parses the command input into variables required to create a cluster
-func parseCreateClusterCmd(cmd *cobra.Command, args []string, opts *createClusterOpts) (runtimes.Runtime, *k3d.Cluster) {
+func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts *k3d.CreateClusterOpts) (runtimes.Runtime, *k3d.Cluster) {
 	// --runtime
 	rt, err := cmd.Flags().GetString("runtime")
 	if err != nil {
@@ -164,15 +165,8 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, opts *createCluste
 	}
 
 	// --wait
-	wait, err := cmd.Flags().GetInt("wait")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	if cmd.Flags().Changed("wait") && wait < 0 {
+	if cmd.Flags().Changed("wait") && createClusterOpts.WaitForMaster < 0 {
 		log.Fatalln("Value of '--wait' can't be less than 0")
-	}
-	if cmd.Flags().Changed("wait") {
-		log.Warnln("--wait not implemented yet") // TODO:
 	}
 
 	// --api-port
@@ -228,12 +222,6 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, opts *createCluste
 
 		// add to map
 		exposeAPIToFiltersMap[exposeAPI] = filters
-	}
-
-	// --no-lb
-	noLB, err := cmd.Flags().GetBool("no-lb")
-	if err != nil {
-		log.Fatalln(err)
 	}
 
 	// --lb-port
@@ -314,34 +302,33 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, opts *createCluste
 		}
 	}
 
-	// --no-image-volume
-	noImageVolume, err := cmd.Flags().GetBool("no-image-volume")
-	if err != nil {
-		log.Fatalln(err)
-	}
+	log.Debugln(portFilterMap)
 
-	/*******************
-	* generate cluster *
-	********************/
+	/********************
+	 *									*
+	 * generate cluster *
+	 *									*
+	 ********************/
+
 	cluster := &k3d.Cluster{
-		Name:    args[0], // TODO: validate name0
-		Network: network,
-		Secret:  secret,
-		ClusterCreationOpts: &k3d.ClusterCreationOpts{
-			DisableImageVolume: noImageVolume,
-			WaitForMaster:      wait,
-		},
+		Name:              args[0], // TODO: validate name0
+		Network:           network,
+		Secret:            secret,
+		CreateClusterOpts: createClusterOpts,
 	}
 
 	// generate list of nodes
 	cluster.Nodes = []*k3d.Node{}
 
-	// -> master nodes
+	/****************
+	 * Master Nodes *
+	 ****************/
+
 	for i := 0; i < masterCount; i++ {
 		node := k3d.Node{
 			Role:       k3d.MasterRole,
 			Image:      image,
-			Args:       opts.K3sServerArgs,
+			Args:       createClusterOpts.K3sServerArgs,
 			MasterOpts: k3d.MasterOpts{},
 		}
 
@@ -358,12 +345,15 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, opts *createCluste
 		cluster.Nodes = append(cluster.Nodes, &node)
 	}
 
-	// -> worker nodes
+	/****************
+	 * Worker Nodes *
+	 ****************/
+
 	for i := 0; i < workerCount; i++ {
 		node := k3d.Node{
 			Role:  k3d.WorkerRole,
 			Image: image,
-			Args:  opts.K3sAgentArgs,
+			Args:  createClusterOpts.K3sAgentArgs,
 		}
 
 		cluster.Nodes = append(cluster.Nodes, &node)
@@ -396,6 +386,9 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, opts *createCluste
 
 	// append ports
 	for portmap, filters := range portFilterMap {
+		if len(filters) == 0 && (masterCount+workerCount) > 1 {
+			log.Fatalf("Malformed portmapping '%s' lacks a node filter, but there is more than one node.", portmap)
+		}
 		nodes, err := cliutil.FilterNodes(cluster.Nodes, filters)
 		if err != nil {
 			log.Fatalln(err)
@@ -405,8 +398,12 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, opts *createCluste
 		}
 	}
 
+	/**********************
+	 * Utility Containers *
+	 **********************/
+
 	// TODO: create load balancer and other util containers // TODO: for now, this will only work with the docker provider (?) -> can replace dynamic docker lookup with static traefik config (?)
-	if masterCount > 1 && !noLB { // TODO: add traefik to the same network and add traefik labels to the master node containers
+	if masterCount > 1 && !createClusterOpts.DisableLoadbalancer { // TODO: add traefik to the same network and add traefik labels to the master node containers
 		log.Debugln("Creating LB in front of master nodes")
 		cluster.MasterLoadBalancer = &k3d.ClusterLoadbalancer{
 			Image:       k3d.DefaultLBImage,

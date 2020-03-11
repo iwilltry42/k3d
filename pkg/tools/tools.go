@@ -37,7 +37,7 @@ import (
 func LoadImagesIntoCluster(runtime runtimes.Runtime, images []string, cluster *k3d.Cluster, keepTarball bool) error {
 	cluster, err := k3dc.GetCluster(cluster, runtime)
 	if err != nil {
-		log.Errorf("Failed to get cluster '%s'", cluster.Name)
+		log.Errorf("Failed to find the specified cluster")
 		return err
 	}
 

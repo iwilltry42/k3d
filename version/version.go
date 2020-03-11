@@ -36,7 +36,7 @@ var K3sVersion = "v1.0.0" // TODO: can we try to dynamically fetch the latest ve
 // GetVersion returns the version for cli, it gets it from "git describe --tags" or returns "dev" when doing simple go build
 func GetVersion() string {
 	if len(Version) == 0 {
-		return "dev"
+		return "v3-dev"
 	}
 	return Version
 }

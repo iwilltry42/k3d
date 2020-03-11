@@ -32,6 +32,7 @@ GOFLAGS   :=
 BINDIR    := $(CURDIR)/bin
 BINARIES  := k3d
 
+K3D_IMAGE_TAG := $(GIT_TAG)
 
 # Go Package required
 PKG_GOX := github.com/mitchellh/gox@v1.0.1
@@ -62,11 +63,15 @@ LINT_DIRS := $(DIRS) $(foreach dir,$(REC_DIRS),$(dir)/...)
 all: clean fmt check build
 
 build:
-	CGO_ENABLED=0 $(GO) build -i $(GOFLAGS) -tags '$(TAGS)' -ldflags '$(LDFLAGS)' -o '$(BINDIR)/$(BINARIES)'
+	CGO_ENABLED=0 $(GO) build $(GOFLAGS) -tags '$(TAGS)' -ldflags '$(LDFLAGS)' -o '$(BINDIR)/$(BINARIES)'
 
 build-cross: LDFLAGS += -extldflags "-static"
 build-cross:
 	CGO_ENABLED=0 gox -parallel=3 -output="_dist/$(BINARIES)-{{.OS}}-{{.Arch}}" -osarch='$(TARGETS)' $(GOFLAGS) $(if $(TAGS),-tags '$(TAGS)',) -ldflags '$(LDFLAGS)'
+
+build-docker: Dockerfile
+	@echo "Building Docker image k3d:$(K3D_IMAGE_TAG)"
+	docker build -t k3d:$(K3D_IMAGE_TAG) .
 
 clean:
 	@rm -rf $(BINDIR) _dist/
@@ -79,6 +84,9 @@ extra-clean: clean
 fmt:
 	@gofmt -s -l -w $(GO_SRC)
 
+e2e: build-docker
+	@echo "Running e2e tests in k3d:$(K3D_IMAGE_TAG)"
+	tests/dind.sh "${K3D_IMAGE_TAG}"
 # check-fmt returns an error code if any source code contains format error.
 check-fmt:
 	@test -z $(shell gofmt -s -l $(GO_SRC) | tee /dev/stderr) || echo "[WARN] Fix formatting issues with 'make fmt'"
@@ -98,15 +106,27 @@ ifndef HAS_GOX
 	($(GO) get $(PKG_GOX))
 endif
 ifndef HAS_GOLANGCI
-	(curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b ${GOPATH}/bin v${PKG_GOLANGCI_LINT_VERSION})
+	(curl -sfL $(PKG_GOLANGCI_LINT_SCRIPT) | sh -s -- -b ${GOPATH}/bin v${PKG_GOLANGCI_LINT_VERSION})
 endif
 ifdef HAS_GOLANGCI
 ifeq ($(HAS_GOLANGCI_VERSION),)
 ifdef INTERACTIVE
 	@echo "Warning: Your installed version of golangci-lint (interactive: ${INTERACTIVE}) differs from what we'd like to use. Switch to v${PKG_GOLANGCI_LINT_VERSION}? [Y/n]"
-	@read line; if [ $$line == "y" ]; then (curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b ${GOPATH}/bin v${PKG_GOLANGCI_LINT_VERSION}); fi
+	@read line; if [ $$line == "y" ]; then (curl -sfL $(PKG_GOLANGCI_LINT_SCRIPT) | sh -s -- -b ${GOPATH}/bin v${PKG_GOLANGCI_LINT_VERSION}); fi
 else
 	@echo "Warning: you're not using the same version of golangci-lint as us (v${PKG_GOLANGCI_LINT_VERSION})"
 endif
 endif
 endif
+
+ci-setup:
+	@echo "Installing Go tools..."
+	curl -sfL $(PKG_GOLANGCI_LINT_SCRIPT) | sh -s -- -b ${GOPATH}/bin v$(PKG_GOLANGCI_LINT_VERSION)
+	go get $(PKG_GOX)
+
+	@echo "Installing kubectl..."
+	curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+	chmod +x ./kubectl
+	sudo mv ./kubectl /usr/local/bin/kubectl
+
+ci-tests: fmt check e2e
