@@ -11,7 +11,11 @@ GIT_TAG   := $(shell git describe --always)
 endif
 
 # get latest k3s version: grep the tag JSON field, extract the tag and replace + with - (difference between git and dockerhub tags)
+ifneq (${GITHUB_API_TOKEN},)
+K3S_TAG		:= $(shell curl --silent -H "Authorization: token:  ${GITHUB_API_TOKEN}" "https://api.github.com/repos/rancher/k3s/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed -E 's/\+/\-/')
+else
 K3S_TAG		:= $(shell curl --silent "https://api.github.com/repos/rancher/k3s/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed -E 's/\+/\-/')
+endif
 ifeq ($(K3S_TAG),)
 $(warning K3S_TAG undefined: couldn't get latest k3s image tag!)
 $(warning Output of curl: $(shell curl --silent "https://api.github.com/repos/rancher/k3s/releases/latest"))
