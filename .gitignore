@@ -8,6 +8,7 @@
 # Output folders
 bin/
 _dist/
+site/
 
 # Test binary, build with `go test -c`
 *.test

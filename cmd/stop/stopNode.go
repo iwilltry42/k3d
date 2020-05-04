@@ -35,13 +35,13 @@ func NewCmdStopNode() *cobra.Command {
 
 	// create new command
 	cmd := &cobra.Command{
-		Use:   "node NAME", // TODO: allow one or more names or --all",
+		Use:   "node NAME", // TODO: stopNode: allow one or more names or --all",
 		Short: "Stop an existing k3d node",
 		Long:  `Stop an existing k3d node.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			log.Debugln("stop node called")
-			runtime, node := parseStopNodeCmd(cmd, args)
-			if err := runtime.StopNode(node); err != nil {
+			node := parseStopNodeCmd(cmd, args)
+			if err := runtimes.SelectedRuntime.StopNode(node); err != nil {
 				log.Fatalln(err)
 			}
 		},
@@ -52,21 +52,11 @@ func NewCmdStopNode() *cobra.Command {
 }
 
 // parseStopNodeCmd parses the command input into variables required to stop a node
-func parseStopNodeCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, *k3d.Node) {
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
-	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
+func parseStopNodeCmd(cmd *cobra.Command, args []string) *k3d.Node {
 	// node name // TODO: allow node filters, e.g. `k3d stop nodes mycluster@worker` to stop all worker nodes of cluster 'mycluster'
 	if len(args) == 0 || len(args[0]) == 0 {
 		log.Fatalln("No node name given")
 	}
 
-	return runtime, &k3d.Node{Name: args[0]} // TODO: validate and allow for more than one
+	return &k3d.Node{Name: args[0]}
 }

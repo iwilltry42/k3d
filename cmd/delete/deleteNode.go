@@ -41,13 +41,13 @@ func NewCmdDeleteNode() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			log.Debugln("delete node called")
 
-			runtime, nodes := parseDeleteNodeCmd(cmd, args)
+			nodes := parseDeleteNodeCmd(cmd, args)
 
 			if len(nodes) == 0 {
 				log.Infoln("No nodes found")
 			} else {
 				for _, node := range nodes {
-					if err := cluster.DeleteNode(runtime, node); err != nil {
+					if err := cluster.DeleteNode(runtimes.SelectedRuntime, node); err != nil {
 						log.Fatalln(err)
 					}
 				}
@@ -67,16 +67,7 @@ func NewCmdDeleteNode() *cobra.Command {
 }
 
 // parseDeleteNodeCmd parses the command input into variables required to delete nodes
-func parseDeleteNodeCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, []*k3d.Node) {
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
-	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
-	}
+func parseDeleteNodeCmd(cmd *cobra.Command, args []string) []*k3d.Node {
 
 	// --all
 	var nodes []*k3d.Node
@@ -84,11 +75,11 @@ func parseDeleteNodeCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, []
 	if all, err := cmd.Flags().GetBool("all"); err != nil {
 		log.Fatalln(err)
 	} else if all {
-		nodes, err = cluster.GetNodes(runtime)
+		nodes, err = cluster.GetNodes(runtimes.SelectedRuntime)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		return runtime, nodes
+		return nodes
 	}
 
 	if len(args) < 1 {
@@ -96,12 +87,12 @@ func parseDeleteNodeCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, []
 	}
 
 	for _, name := range args {
-		node, err := cluster.GetNode(&k3d.Node{Name: name}, runtime)
+		node, err := cluster.GetNode(&k3d.Node{Name: name}, runtimes.SelectedRuntime)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		nodes = append(nodes, node)
 	}
 
-	return runtime, nodes
+	return nodes
 }

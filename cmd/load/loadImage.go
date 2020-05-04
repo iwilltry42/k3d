@@ -41,11 +41,11 @@ func NewCmdLoadImage() *cobra.Command {
 		Long:  `Load an image from docker into a k3d cluster.`,
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			runtime, images, clusters, keepTarball := parseLoadImageCmd(cmd, args)
-			log.Debugf("Load images [%+v] from runtime [%s] into clusters [%+v]", runtime, images, clusters)
+			images, clusters, keepTarball := parseLoadImageCmd(cmd, args)
+			log.Debugf("Load images [%+v] from runtime [%s] into clusters [%+v]", runtimes.SelectedRuntime, images, clusters)
 			for _, cluster := range clusters {
 				log.Debugf("Loading images into '%s'", cluster.Name)
-				if err := tools.LoadImagesIntoCluster(runtime, images, &cluster, keepTarball); err != nil {
+				if err := tools.LoadImagesIntoCluster(runtimes.SelectedRuntime, images, &cluster, keepTarball); err != nil {
 					log.Errorf("Failed to load images into cluster '%s'", cluster.Name)
 					log.Errorln(err)
 				}
@@ -71,23 +71,13 @@ func NewCmdLoadImage() *cobra.Command {
 }
 
 // parseLoadImageCmd parses the command input into variables required to create a cluster
-func parseLoadImageCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, []string, []k3d.Cluster, bool) {
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
-	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
+func parseLoadImageCmd(cmd *cobra.Command, args []string) ([]string, []k3d.Cluster, bool) {
 	// --tar
 	localTarball, err := cmd.Flags().GetString("tar")
 	if err != nil {
 		log.Fatalln(err)
 	}
-	if cmd.Flags().Changed("tar") { // TODO: implement import from local tarball
+	if cmd.Flags().Changed("tar") { // TODO: loadImage: implement import from local tarball
 		log.Fatalf("--tar flag not supported yet '%s'", localTarball)
 	}
 
@@ -113,5 +103,5 @@ func parseLoadImageCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, []s
 		log.Fatalln("No images specified!")
 	}
 
-	return runtime, images, clusters, keepTarball
+	return images, clusters, keepTarball
 }

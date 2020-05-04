@@ -41,12 +41,12 @@ func NewCmdStartCluster() *cobra.Command {
 		Long:  `Start an existing k3d cluster`,
 		Run: func(cmd *cobra.Command, args []string) {
 			log.Debugln("start cluster called")
-			runtime, clusters := parseStartClusterCmd(cmd, args)
+			clusters := parseStartClusterCmd(cmd, args)
 			if len(clusters) == 0 {
 				log.Infoln("No clusters found")
 			} else {
 				for _, c := range clusters {
-					if err := cluster.StartCluster(c, runtime); err != nil {
+					if err := cluster.StartCluster(c, runtimes.SelectedRuntime); err != nil {
 						log.Fatalln(err)
 					}
 				}
@@ -66,28 +66,18 @@ func NewCmdStartCluster() *cobra.Command {
 }
 
 // parseStartClusterCmd parses the command input into variables required to start clusters
-func parseStartClusterCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, []*k3d.Cluster) {
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
-	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
+func parseStartClusterCmd(cmd *cobra.Command, args []string) []*k3d.Cluster {
 	// --all
 	var clusters []*k3d.Cluster
 
 	if all, err := cmd.Flags().GetBool("all"); err != nil {
 		log.Fatalln(err)
 	} else if all {
-		clusters, err = cluster.GetClusters(runtime)
+		clusters, err = cluster.GetClusters(runtimes.SelectedRuntime)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		return runtime, clusters
+		return clusters
 	}
 
 	if len(args) < 1 {
@@ -95,12 +85,12 @@ func parseStartClusterCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, 
 	}
 
 	for _, name := range args {
-		cluster, err := cluster.GetCluster(&k3d.Cluster{Name: name}, runtime)
+		cluster, err := cluster.GetCluster(&k3d.Cluster{Name: name}, runtimes.SelectedRuntime)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		clusters = append(clusters, cluster)
 	}
 
-	return runtime, clusters
+	return clusters
 }

@@ -10,6 +10,10 @@ source "$CURR_DIR/common.sh"
 
 [ -n "$EXE" ] || abort "no EXE provided"
 
+info "Preparing filesystem and environment..."
+
+mkdir -p /root/.kube
+
 info "Starting e2e tests..."
 
 for i in $CURR_DIR/test_*.sh ; do

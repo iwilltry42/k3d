@@ -40,6 +40,7 @@ func (d Docker) CreateVolume(name string, labels map[string]string) error {
 		log.Errorln("Failed to create docker client")
 		return err
 	}
+	defer docker.Close()
 
 	// (1) create volume
 	volumeCreateOptions := volume.VolumeCreateBody{
@@ -70,6 +71,7 @@ func (d Docker) DeleteVolume(name string) error {
 		log.Errorln("Failed to create docker client")
 		return err
 	}
+	defer docker.Close()
 
 	// get volume and delete it
 	vol, err := docker.VolumeInspect(ctx, name)

@@ -34,13 +34,13 @@ func NewCmdStartNode() *cobra.Command {
 
 	// create new command
 	cmd := &cobra.Command{
-		Use:   "node NAME", // TODO: allow one or more names or --all
+		Use:   "node NAME", // TODO: startNode: allow one or more names or --all
 		Short: "Start an existing k3d node",
 		Long:  `Start an existing k3d node.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			log.Debugln("start node called")
-			runtime, node := parseStartNodeCmd(cmd, args)
-			if err := runtime.StartNode(node); err != nil {
+			node := parseStartNodeCmd(cmd, args)
+			if err := runtimes.SelectedRuntime.StartNode(node); err != nil {
 				log.Fatalln(err)
 			}
 		},
@@ -51,21 +51,11 @@ func NewCmdStartNode() *cobra.Command {
 }
 
 // parseStartNodeCmd parses the command input into variables required to start a node
-func parseStartNodeCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, *k3d.Node) {
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
-	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	// node name // TODO: allow node filters, e.g. `k3d start nodes mycluster@worker` to start all worker nodes of cluster 'mycluster'
+func parseStartNodeCmd(cmd *cobra.Command, args []string) *k3d.Node {
+	// node name // TODO: startNode: allow node filters, e.g. `k3d start nodes mycluster@worker` to start all worker nodes of cluster 'mycluster'
 	if len(args) == 0 || len(args[0]) == 0 {
 		log.Fatalln("No node name given")
 	}
 
-	return runtime, &k3d.Node{Name: args[0]} // TODO: validate and allow for more than one
+	return &k3d.Node{Name: args[0]}
 }

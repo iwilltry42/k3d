@@ -31,7 +31,7 @@ abort() {
 }
 
 command_exists() {
-    command -v $1 >/dev/null 2>&1
+    command -v "$1" >/dev/null 2>&1
 }
 
 failed() {
@@ -57,22 +57,43 @@ check_url() {
   curl -L --silent -k --output /dev/null --fail "$1"
 }
 
-check_k3d_clusters() {
+# check_clusters verifies that given clusters are reachable
+check_clusters() {
   [ -n "$EXE" ] || abort "EXE is not defined"
-  for c in "c1" "c2" ; do
-    kc=$($EXE get kubeconfig $c)
-    [ -n "$kc" ] || abort "could not obtain a kubeconfig for $c"
-    if kubectl --kubeconfig="$kc" cluster-info ; then
-      passed "cluster $c is reachable (with kubeconfig=$kc)"
+  for c in "$@" ; do
+    $EXE get kubeconfig "$c" --switch
+    if kubectl cluster-info ; then
+      passed "cluster $c is reachable"
     else
-      warn "could not obtain cluster info for $c (with kubeconfig=$kc). Contents:\n$(cat $kc)"
+      warn "could not obtain cluster info for $c. Kubeconfig:\n$(kubectl config view)"
+      docker ps -a
       return 1
     fi
   done
   return 0
 }
 
-check_registry() {
-  check_url $REGISTRY/v2/_catalog
+# check_multi_node verifies that a cluster runs with an expected number of nodes
+check_multi_node() {
+  cluster=$1
+  expectedNodeCount=$2
+  $EXE get kubeconfig "$cluster" --switch
+  nodeCount=$(kubectl get nodes -o=custom-columns=NAME:.metadata.name --no-headers | wc -l)
+  if [[ $nodeCount == $expectedNodeCount ]]; then
+    passed "cluster $cluster has $expectedNodeCount nodes, as expected"
+  else
+    warn "cluster $cluster has incorrect number of nodes: $nodeCount != $expectedNodeCount"
+    kubectl get nodes -o=custom-columns=NAME:.metadata.name --no-headers
+    docker ps -a
+    return 1
+  fi
+  return 0
 }
 
+check_registry() {
+  check_url "$REGISTRY/v2/_catalog"
+}
+
+check_volume_exists() {
+  docker volume inspect "$1" >/dev/null 2>&1
+}

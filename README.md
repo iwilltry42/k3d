@@ -58,7 +58,8 @@ Check out the [examples here](docs/examples.md).
 
 ### More Information
 
-- [Further documentation](docs/documentation.md)
+- [Command Tree](docs/commands.md)
+- [Default Behavior](docs/defaults.md)
 - [Usage examples](docs/examples.md)
 - [Frequently asked questions and nice-to-know facts](docs/faq.md)
 - [Design/Architecture Thoughts, Plans, Unsorted Ideas and more](thoughts.md)

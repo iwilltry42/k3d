@@ -1,0 +1,23 @@
+error_log stderr notice;
+
+worker_processes auto;
+events {
+  multi_accept on;
+  use epoll;
+  worker_connections 1024;
+}
+
+stream {
+  upstream kube_apiserver {
+    {{ $servers := split (getenv "SERVERS") "," }}{{range $servers}}
+    server {{.}}:{{getenv "PORT"}};
+    {{end}}
+  }
+
+  server {
+    listen        {{getenv "PORT"}};
+    proxy_pass    kube_apiserver;
+    proxy_timeout 30;
+    proxy_connect_timeout 2s;
+  }
+}

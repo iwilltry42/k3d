@@ -23,6 +23,7 @@ package types
 
 import (
 	"fmt"
+	"time"
 )
 
 // DefaultClusterName specifies the default name used for newly created clusters
@@ -38,7 +39,7 @@ const DefaultClusterNameMaxLength = 32
 const DefaultK3sImageRepo = "docker.io/rancher/k3s"
 
 // DefaultLBImage defines the default cluster load balancer image
-const DefaultLBImage = "docker.io/library/traefik:v2.0"
+const DefaultLBImage = "docker.io/iwilltry42/k3d-proxy:v0.0.1"
 
 // DefaultObjectNamePrefix defines the name prefix for every object created by k3d
 const DefaultObjectNamePrefix = "k3d"
@@ -48,15 +49,17 @@ type Role string
 
 // existing k3d node roles
 const (
-	MasterRole Role = "master"
-	WorkerRole Role = "worker"
-	NoRole     Role = "nope"
+	MasterRole       Role = "master"
+	WorkerRole       Role = "worker"
+	NoRole           Role = "noRole"
+	LoadBalancerRole Role = "loadbalancer"
 )
 
-// DefaultK3dRoles defines the roles available for nodes
-var DefaultK3dRoles = map[string]Role{
-	string(MasterRole): MasterRole,
-	string(WorkerRole): WorkerRole,
+// NodeRoles defines the roles available for nodes
+var NodeRoles = map[string]Role{
+	string(MasterRole):       MasterRole,
+	string(WorkerRole):       WorkerRole,
+	string(LoadBalancerRole): LoadBalancerRole,
 }
 
 // DefaultObjectLabels specifies a set of labels that will be attached to k3d objects by default
@@ -87,13 +90,19 @@ const DefaultConfigDirName = ".k3d" // should end up in $HOME/
 // DefaultKubeconfigPrefix defines the default prefix for kubeconfig files
 const DefaultKubeconfigPrefix = DefaultObjectNamePrefix + "-kubeconfig"
 
+// DefaultAPIPort defines the default Kubernetes API Port
+const DefaultAPIPort = "6443"
+
+// DefaultAPIHost defines the default host (IP) for the Kubernetes API
+const DefaultAPIHost = "0.0.0.0"
+
 // CreateClusterOpts describe a set of options one can set when creating a cluster
 type CreateClusterOpts struct {
-	DisableImageVolume  bool
-	DisableLoadbalancer bool
-	WaitForMaster       int
-	K3sServerArgs       []string
-	K3sAgentArgs        []string
+	DisableImageVolume bool
+	WaitForMaster      bool
+	Timeout            time.Duration
+	K3sServerArgs      []string
+	K3sAgentArgs       []string
 }
 
 // ClusterNetwork describes a network which a cluster is running in
@@ -104,14 +113,15 @@ type ClusterNetwork struct {
 
 // Cluster describes a k3d cluster
 type Cluster struct {
-	Name               string               `yaml:"name" json:"name,omitempty"`
-	Network            ClusterNetwork       `yaml:"network" json:"network,omitempty"`
-	Secret             string               `yaml:"cluster_secret" json:"clusterSecret,omitempty"`
-	Nodes              []*Node              `yaml:"nodes" json:"nodes,omitempty"`
-	InitNode           *Node                // init master node
-	MasterLoadBalancer *ClusterLoadbalancer `yaml:"master_loadbalancer" json:"masterLoadBalancer,omitempty"`
-	ExternalDatastore  ExternalDatastore    `yaml:"external_datastore" json:"externalDatastore,omitempty"`
-	CreateClusterOpts  *CreateClusterOpts   `yaml:"options" json:"options,omitempty"`
+	Name              string             `yaml:"name" json:"name,omitempty"`
+	Network           ClusterNetwork     `yaml:"network" json:"network,omitempty"`
+	Secret            string             `yaml:"cluster_secret" json:"clusterSecret,omitempty"`
+	Nodes             []*Node            `yaml:"nodes" json:"nodes,omitempty"`
+	InitNode          *Node              // init master node
+	ExternalDatastore ExternalDatastore  `yaml:"external_datastore" json:"externalDatastore,omitempty"`
+	CreateClusterOpts *CreateClusterOpts `yaml:"options" json:"options,omitempty"`
+	ExposeAPI         ExposeAPI          `yaml:"expose_api" json:"exposeAPI,omitempty"`
+	ImageVolume       string             `yaml:"image_volume" json:"imageVolume,omitempty"`
 }
 
 // Node describes a k3d node
@@ -133,8 +143,8 @@ type Node struct {
 
 // MasterOpts describes some additional master role specific opts
 type MasterOpts struct {
-	ExposeAPI ExposeAPI `yaml:"expose_api" json:"exposeAPI,omitempty"`
 	IsInit    bool      `yaml:"is_initializing_master" json:"isInitializingMaster,omitempty"`
+	ExposeAPI ExposeAPI // filled automatically
 }
 
 // ExternalDatastore describes an external datastore used for HA/multi-master clusters
@@ -159,10 +169,4 @@ type WorkerOpts struct{}
 // GetDefaultObjectName prefixes the passed name with the default prefix
 func GetDefaultObjectName(name string) string {
 	return fmt.Sprintf("%s-%s", DefaultObjectNamePrefix, name)
-}
-
-// ClusterLoadbalancer describes a loadbalancer deployed in front of a multi-master cluster
-type ClusterLoadbalancer struct {
-	Image       string
-	ExposedPort string `yaml:"exposed_port" json:"exposedPort,omitempty"`
 }

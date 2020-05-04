@@ -31,6 +31,9 @@ import (
 	k3d "github.com/rancher/k3d/pkg/types"
 )
 
+// SelectedRuntime is a runtime (pun intended) variable determining the selected runtime
+var SelectedRuntime Runtime = docker.Docker{}
+
 // Runtimes defines a map of implemented k3d runtimes
 var Runtimes = map[string]Runtime{
 	"docker":     docker.Docker{},

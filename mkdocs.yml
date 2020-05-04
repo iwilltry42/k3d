@@ -1,0 +1,45 @@
+# Project information
+site_name: k3d
+site_description: Little helper to run Rancher Lab's k3s in Docker
+site_url: https://k3d.io/
+
+copyright: "Copyright &copy; 2020 k3d Authors"
+
+# Repo Information
+repo_name: rancher/k3d
+repo_url: https://github.com/rancher/k3d
+
+# Theme
+theme: 
+  name: material
+  language: en
+  features:
+    - tabs
+  palette:
+    primary: "black"
+    accent: "grey"
+
+# Navigation
+# nav: ommitted, because we're using the awesome-pages plugin (https://squidfunk.github.io/mkdocs-material/plugins/awesome-pages/)
+
+# Extensions
+markdown_extensions:
+  - toc:
+      permalink: true
+  - admonition # https://squidfunk.github.io/mkdocs-material/extensions/admonition/
+  - codehilite # https://squidfunk.github.io/mkdocs-material/extensions/codehilite/
+  - pymdownx.inlinehilite # https://squidfunk.github.io/mkdocs-material/extensions/pymdown/#inlinehilite
+  - pymdownx.superfences # https://squidfunk.github.io/mkdocs-material/extensions/pymdown/#superfences
+  - pymdownx.tabbed # https://squidfunk.github.io/mkdocs-material/extensions/pymdown/#tabbed
+  - pymdownx.details # https://squidfunk.github.io/mkdocs-material/extensions/pymdown/#details
+  - smarty # https://python-markdown.github.io/extensions/smarty/
+
+# Plugins
+plugins:
+  - search
+  - git-revision-date-localized: # https://squidfunk.github.io/mkdocs-material/plugins/revision-date/
+      type: date
+  - awesome-pages # https://squidfunk.github.io/mkdocs-material/plugins/awesome-pages/
+
+# Other Settings
+strict: true # halt processing when a warning is raised

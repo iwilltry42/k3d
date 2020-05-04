@@ -42,19 +42,24 @@ func NewCmdDeleteCluster() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			log.Debugln("delete cluster called")
 
-			runtime, clusters := parseDeleteClusterCmd(cmd, args)
+			clusters := parseDeleteClusterCmd(cmd, args)
 
 			if len(clusters) == 0 {
 				log.Infoln("No clusters found")
 			} else {
 				for _, c := range clusters {
-					if err := cluster.DeleteCluster(c, runtime); err != nil {
+					if err := cluster.DeleteCluster(c, runtimes.SelectedRuntime); err != nil {
 						log.Fatalln(err)
 					}
+					log.Infoln("Removing cluster details from default kubeconfig")
+					if err := cluster.RemoveClusterFromDefaultKubeConfig(c); err != nil {
+						log.Warnln("Failed to remove cluster details from default kubeconfig")
+						log.Warnln(err)
+					}
+
+					log.Infof("Successfully deleted cluster %s!", c.Name)
 				}
 			}
-
-			log.Debugln("...Finished")
 
 		},
 	}
@@ -69,16 +74,7 @@ func NewCmdDeleteCluster() *cobra.Command {
 }
 
 // parseDeleteClusterCmd parses the command input into variables required to delete clusters
-func parseDeleteClusterCmd(cmd *cobra.Command, args []string) (runtimes.Runtime, []*k3d.Cluster) {
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
-	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
-	}
+func parseDeleteClusterCmd(cmd *cobra.Command, args []string) []*k3d.Cluster {
 
 	// --all
 	var clusters []*k3d.Cluster
@@ -86,11 +82,11 @@ func parseDeleteClusterCmd(cmd *cobra.Command, args []string) (runtimes.Runtime,
 	if all, err := cmd.Flags().GetBool("all"); err != nil {
 		log.Fatalln(err)
 	} else if all {
-		clusters, err = cluster.GetClusters(runtime)
+		clusters, err = cluster.GetClusters(runtimes.SelectedRuntime)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		return runtime, clusters
+		return clusters
 	}
 
 	if len(args) < 1 {
@@ -98,12 +94,12 @@ func parseDeleteClusterCmd(cmd *cobra.Command, args []string) (runtimes.Runtime,
 	}
 
 	for _, name := range args {
-		cluster, err := cluster.GetCluster(&k3d.Cluster{Name: name}, runtime)
+		cluster, err := cluster.GetCluster(&k3d.Cluster{Name: name}, runtimes.SelectedRuntime)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		clusters = append(clusters, cluster)
 	}
 
-	return runtime, clusters
+	return clusters
 }

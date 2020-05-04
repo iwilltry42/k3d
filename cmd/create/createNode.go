@@ -43,9 +43,9 @@ func NewCmdCreateNode() *cobra.Command {
 		Long:  `Create a new containerized k3s node (k3s in docker).`,
 		Args:  cobra.ExactArgs(1), // exactly one name accepted // TODO: if not specified, inherit from cluster that the node shall belong to, if that is specified
 		Run: func(cmd *cobra.Command, args []string) {
-			nodes, cluster, runtime := parseCreateNodeCmd(cmd, args)
+			nodes, cluster := parseCreateNodeCmd(cmd, args)
 			for _, node := range nodes {
-				if err := k3dc.AddNodeToCluster(runtime, node, cluster); err != nil {
+				if err := k3dc.AddNodeToCluster(runtimes.SelectedRuntime, node, cluster); err != nil {
 					log.Errorf("Failed to add node '%s' to cluster '%s'", node.Name, cluster.Name)
 					log.Errorln(err)
 				}
@@ -56,29 +56,19 @@ func NewCmdCreateNode() *cobra.Command {
 	// add flags
 	cmd.Flags().Int("replicas", 1, "Number of replicas of this node specification.")
 	cmd.Flags().String("role", string(k3d.WorkerRole), "Specify node role [master, worker]")
-	cmd.Flags().StringP("cluster", "c", "", "[REQUIRED] Select the cluster that the node shall connect to.")
+	cmd.Flags().StringP("cluster", "c", k3d.DefaultClusterName, "Select the cluster that the node shall connect to.")
 	if err := cmd.MarkFlagRequired("cluster"); err != nil {
 		log.Fatalln("Failed to mark required flag '--cluster'")
 	}
 
-	cmd.Flags().String("image", fmt.Sprintf("%s:%s", k3d.DefaultK3sImageRepo, version.GetK3sVersion(false)), "Specify k3s image used for the node(s)")
+	cmd.Flags().StringP("image", "i", fmt.Sprintf("%s:%s", k3d.DefaultK3sImageRepo, version.GetK3sVersion(false)), "Specify k3s image used for the node(s)")
 
 	// done
 	return cmd
 }
 
 // parseCreateNodeCmd parses the command input into variables required to create a cluster
-func parseCreateNodeCmd(cmd *cobra.Command, args []string) ([]*k3d.Node, *k3d.Cluster, runtimes.Runtime) {
-
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
-	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
-	}
+func parseCreateNodeCmd(cmd *cobra.Command, args []string) ([]*k3d.Node, *k3d.Cluster) {
 
 	// --replicas
 	replicas, err := cmd.Flags().GetInt("replicas")
@@ -88,15 +78,16 @@ func parseCreateNodeCmd(cmd *cobra.Command, args []string) ([]*k3d.Node, *k3d.Cl
 	}
 
 	// --role
+	// TODO: createNode: for --role=master, update the nginx config and add TLS-SAN and server connection, etc.
 	roleStr, err := cmd.Flags().GetString("role")
 	if err != nil {
 		log.Errorln("No node role specified")
 		log.Fatalln(err)
 	}
-	if _, ok := k3d.DefaultK3dRoles[roleStr]; !ok {
+	if _, ok := k3d.NodeRoles[roleStr]; !ok {
 		log.Fatalf("Unknown node role '%s'\n", roleStr)
 	}
-	role := k3d.DefaultK3dRoles[roleStr]
+	role := k3d.NodeRoles[roleStr]
 
 	// --image
 	image, err := cmd.Flags().GetString("image")
@@ -125,5 +116,5 @@ func parseCreateNodeCmd(cmd *cobra.Command, args []string) ([]*k3d.Node, *k3d.Cl
 		nodes = append(nodes, node)
 	}
 
-	return nodes, cluster, runtime
+	return nodes, cluster
 }

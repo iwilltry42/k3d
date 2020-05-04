@@ -25,10 +25,13 @@ package create
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	cliutil "github.com/rancher/k3d/cmd/util"
+	"github.com/rancher/k3d/pkg/cluster"
 	k3dCluster "github.com/rancher/k3d/pkg/cluster"
 	"github.com/rancher/k3d/pkg/runtimes"
 	k3d "github.com/rancher/k3d/pkg/types"
@@ -37,68 +40,107 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const createClusterDescription = `
+Create a new k3s cluster with containerized nodes (k3s in docker).
+Every cluster will consist of at least 2 containers:
+	- 1 master node container (k3s)
+	- 1 loadbalancer container as the entrypoint to the cluster (nginx)
+`
+
 // NewCmdCreateCluster returns a new cobra command
 func NewCmdCreateCluster() *cobra.Command {
 
 	createClusterOpts := &k3d.CreateClusterOpts{}
+	var updateKubeconfig bool
 
 	// create new command
 	cmd := &cobra.Command{
 		Use:   "cluster NAME",
 		Short: "Create a new k3s cluster in docker",
-		Long:  `Create a new k3s cluster with containerized nodes (k3s in docker).`,
-		Args:  cobra.ExactArgs(1), // exactly one cluster name can be set // TODO: if not specified, use k3d.DefaultClusterName
+		Long:  createClusterDescription,
+		Args:  cobra.RangeArgs(0, 1), // exactly one cluster name can be set (default: k3d.DefaultClusterName)
 		Run: func(cmd *cobra.Command, args []string) {
-			runtime, cluster := parseCreateClusterCmd(cmd, args, createClusterOpts)
-			if err := k3dCluster.CreateCluster(cluster, runtime); err != nil {
+			// parse args and flags
+			cluster := parseCreateClusterCmd(cmd, args, createClusterOpts)
+
+			// check if a cluster with that name exists already
+			if _, err := k3dCluster.GetCluster(cluster, runtimes.SelectedRuntime); err == nil {
+				log.Fatalf("Failed to create cluster '%s' because a cluster with that name already exists", cluster.Name)
+			}
+
+			// create cluster
+			if updateKubeconfig {
+				log.Debugln("'--update-kubeconfig set: enabling wait-for-master")
+				cluster.CreateClusterOpts.WaitForMaster = true
+			}
+			if err := k3dCluster.CreateCluster(cmd.Context(), cluster, runtimes.SelectedRuntime); err != nil {
+				// rollback if creation failed
 				log.Errorln(err)
 				log.Errorln("Failed to create cluster >>> Rolling Back")
-				if err := k3dCluster.DeleteCluster(cluster, runtime); err != nil {
+				if err := k3dCluster.DeleteCluster(cluster, runtimes.SelectedRuntime); err != nil {
 					log.Errorln(err)
 					log.Fatalln("Cluster creation FAILED, also FAILED to rollback changes!")
 				}
 				log.Fatalln("Cluster creation FAILED, all changes have been rolled back!")
 			}
-			log.Infof("Cluster '%s' created successfully. You can now use it like this:", cluster.Name)
-			fmt.Printf("export KUBECONFIG=$(%s get kubeconfig %s)\n", os.Args[0], cluster.Name)
-			fmt.Println("kubectl cluster-info")
+			log.Infof("Cluster '%s' created successfully!", cluster.Name)
+
+			if updateKubeconfig {
+				log.Debugf("Updating default kubeconfig with a new context for cluster %s", cluster.Name)
+				if err := k3dCluster.GetAndWriteKubeConfig(runtimes.SelectedRuntime, cluster, "", &k3dCluster.WriteKubeConfigOptions{UpdateExisting: true, OverwriteExisting: false, UpdateCurrentContext: false}); err != nil {
+					log.Fatalln(err)
+				}
+			}
+
+			// print information on how to use the cluster with kubectl
+			log.Infoln("You can now use it like this:")
+			if updateKubeconfig {
+				fmt.Printf("kubectl config use-context %s\n", fmt.Sprintf("%s-%s", k3d.DefaultObjectNamePrefix, cluster.Name))
+			} else {
+				if runtime.GOOS == "windows" {
+					log.Debugf("GOOS is %s", runtime.GOOS)
+					fmt.Printf("$env:KUBECONFIG=(%s get kubeconfig %s)\n", os.Args[0], cluster.Name)
+				} else {
+					fmt.Printf("export KUBECONFIG=$(%s get kubeconfig %s)\n", os.Args[0], cluster.Name)
+				}
+				fmt.Println("kubectl cluster-info")
+			}
 		},
 	}
 
 	/*********
 	 * Flags *
 	 *********/
-	cmd.Flags().StringArrayP("api-port", "a", []string{"6443"}, "Specify the Kubernetes API server port (Format: `--api-port [HOST:]HOSTPORT[@NODEFILTER]`\n - Example: `k3d create -m 3 -a 0.0.0.0:6550@master[0] -a 0.0.0.0:6551@master[1]` ")
+	cmd.Flags().StringP("api-port", "a", k3d.DefaultAPIPort, "Specify the Kubernetes API server port exposed on the LoadBalancer (Format: `--api-port [HOST:]HOSTPORT`)\n - Example: `k3d create -m 3 -a 0.0.0.0:6550`")
 	cmd.Flags().IntP("masters", "m", 1, "Specify how many masters you want to create")
 	cmd.Flags().IntP("workers", "w", 0, "Specify how many workers you want to create")
-	// cmd.Flags().String("config", "", "Specify a cluster configuration file")                                     // TODO: to implement
-	cmd.Flags().String("image", fmt.Sprintf("%s:%s", k3d.DefaultK3sImageRepo, version.GetK3sVersion(false)), "Specify k3s image that you want to use for the nodes")
+	cmd.Flags().StringP("image", "i", fmt.Sprintf("%s:%s", k3d.DefaultK3sImageRepo, version.GetK3sVersion(false)), "Specify k3s image that you want to use for the nodes")
 	cmd.Flags().String("network", "", "Join an existing network")
 	cmd.Flags().String("secret", "", "Specify a cluster secret. By default, we generate one.")
 	cmd.Flags().StringArrayP("volume", "v", nil, "Mount volumes into the nodes (Format: `--volume [SOURCE:]DEST[@NODEFILTER[;NODEFILTER...]]`\n - Example: `k3d create -w 2 -v /my/path@worker[0,1] -v /tmp/test:/tmp/other@master[0]`")
 	cmd.Flags().StringArrayP("port", "p", nil, "Map ports from the node containers to the host (Format: `[HOST:][HOSTPORT:]CONTAINERPORT[/PROTOCOL][@NODEFILTER]`)\n - Example: `k3d create -w 2 -p 8080:80@worker[0] -p 8081@worker[1]`")
-	cmd.Flags().IntVar(&createClusterOpts.WaitForMaster, "wait", -1, "Wait for a specified amount of time (seconds >= 0, where 0 means forever) for the master(s) to be ready or timeout and rollback before returning")
+	cmd.Flags().BoolVar(&createClusterOpts.WaitForMaster, "wait", false, "Wait for the master(s) to be ready before returning. Use '--timeout DURATION' to not wait forever.")
+	cmd.Flags().DurationVar(&createClusterOpts.Timeout, "timeout", 0*time.Second, "Rollback changes if cluster couldn't be created in specified duration.")
+	cmd.Flags().BoolVar(&updateKubeconfig, "update-kubeconfig", false, "Directly update the default kubeconfig with the new cluster's context")
 
 	/* Image Importing */
 	cmd.Flags().BoolVar(&createClusterOpts.DisableImageVolume, "no-image-volume", false, "Disable the creation of a volume for importing images")
 
-	/* Multi Master Configuration */ // TODO: to implement (whole multi master thingy)
-	// multi-master - general
-	cmd.Flags().BoolVar(&createClusterOpts.DisableLoadbalancer, "no-lb", false, "[WIP] Disable automatic deployment of a load balancer in Multi-Master setups") // TODO: to implement
-	cmd.Flags().String("lb-port", "0.0.0.0:6443", "[WIP] Specify port to be exposed by the master load balancer (Format: `[HOST:]HOSTPORT)")                    // TODO: to implement
+	/* Multi Master Configuration */
 
 	// multi-master - datastore
-	cmd.Flags().String("datastore-endpoint", "", "[WIP] Specify external datastore endpoint (e.g. for multi master clusters)")
-	/* TODO: activate
-	cmd.Flags().String("datastore-network", "", "Specify container network where we can find the datastore-endpoint (add a connection)")
+	// TODO: implement multi-master setups with external data store
+	// cmd.Flags().String("datastore-endpoint", "", "[WIP] Specify external datastore endpoint (e.g. for multi master clusters)")
+	/*
+		cmd.Flags().String("datastore-network", "", "Specify container network where we can find the datastore-endpoint (add a connection)")
 
-	// TODO: set default paths and hint, that one should simply mount the files using --volume flag
-	cmd.Flags().String("datastore-cafile", "", "Specify external datastore's TLS Certificate Authority (CA) file")
-	cmd.Flags().String("datastore-certfile", "", "Specify external datastore's TLS certificate file'")
-	cmd.Flags().String("datastore-keyfile", "", "Specify external datastore's TLS key file'")
+		// TODO: set default paths and hint, that one should simply mount the files using --volume flag
+		cmd.Flags().String("datastore-cafile", "", "Specify external datastore's TLS Certificate Authority (CA) file")
+		cmd.Flags().String("datastore-certfile", "", "Specify external datastore's TLS certificate file'")
+		cmd.Flags().String("datastore-keyfile", "", "Specify external datastore's TLS key file'")
 	*/
 
-	/* k3s */ // TODO: to implement extra args
+	/* k3s */
 	cmd.Flags().StringArrayVar(&createClusterOpts.K3sServerArgs, "k3s-server-arg", nil, "Additional args passed to the `k3s server` command on master nodes (new flag per arg)")
 	cmd.Flags().StringArrayVar(&createClusterOpts.K3sAgentArgs, "k3s-agent-arg", nil, "Additional args passed to the `k3s agent` command on worker nodes (new flag per arg)")
 
@@ -109,16 +151,23 @@ func NewCmdCreateCluster() *cobra.Command {
 }
 
 // parseCreateClusterCmd parses the command input into variables required to create a cluster
-func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts *k3d.CreateClusterOpts) (runtimes.Runtime, *k3d.Cluster) {
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
+func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts *k3d.CreateClusterOpts) *k3d.Cluster {
+
+	/********************************
+	 * Parse and validate arguments *
+	 ********************************/
+
+	clustername := k3d.DefaultClusterName
+	if len(args) != 0 {
+		clustername = args[0]
 	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
+	if err := cluster.CheckName(clustername); err != nil {
+		log.Fatal(err)
 	}
+
+	/****************************
+	 * Parse and validate flags *
+	 ****************************/
 
 	// --image
 	image, err := cmd.Flags().GetString("image")
@@ -134,11 +183,6 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts 
 	masterCount, err := cmd.Flags().GetInt("masters")
 	if err != nil {
 		log.Fatalln(err)
-	}
-
-	// TODO: allow more than one master
-	if masterCount > 1 {
-		log.Warnln("Multi-Master is setup not fully implemented/supported right now!")
 	}
 
 	// --workers
@@ -157,6 +201,9 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts 
 		network.Name = networkName
 		network.External = true
 	}
+	if networkName == "host" && (masterCount+workerCount) > 1 {
+		log.Fatalln("Can only run a single node in hostnetwork mode")
+	}
 
 	// --secret
 	secret, err := cmd.Flags().GetString("secret")
@@ -164,79 +211,27 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts 
 		log.Fatalln(err)
 	}
 
-	// --wait
-	if cmd.Flags().Changed("wait") && createClusterOpts.WaitForMaster < 0 {
-		log.Fatalln("Value of '--wait' can't be less than 0")
+	// --timeout
+	if cmd.Flags().Changed("timeout") && createClusterOpts.Timeout <= 0*time.Second {
+		log.Fatalln("--timeout DURATION must be >= 1s")
 	}
 
 	// --api-port
-	apiPortFlags, err := cmd.Flags().GetStringArray("api-port")
+	apiPort, err := cmd.Flags().GetString("api-port")
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	// error out if we have more api-ports than masters specified
-	if len(apiPortFlags) > masterCount {
-		log.Fatalf("Cannot expose more api-ports than master nodes exist (%d > %d)", len(apiPortFlags), masterCount)
-	}
-
-	ipPortCombinations := map[string]struct{}{} // only for finding duplicates
-	apiPortFilters := map[string]struct{}{}     // only for deduplication
-	exposeAPIToFiltersMap := map[k3d.ExposeAPI][]string{}
-	for _, apiPortFlag := range apiPortFlags {
-
-		// split the flag value from the node filter
-		apiPortString, filters, err := cliutil.SplitFiltersFromFlag(apiPortFlag)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		// if there's only one master node, we don't need a node filter, but if there's more than one, we need exactly one node filter per api-port flag
-		if len(filters) > 1 || (len(filters) == 0 && masterCount > 1) {
-			log.Fatalf("Exactly one node filter required per '--api-port' flag, but got %d on flag %s", len(filters), apiPortFlag)
-		}
-
-		// add default, if no filter was set and we only have a single master node
-		if len(filters) == 0 && masterCount == 1 {
-			filters = []string{"master[0]"}
-		}
-
-		// only one api-port mapping allowed per master node
-		if _, exists := apiPortFilters[filters[0]]; exists {
-			log.Fatalf("Cannot assign multiple api-port mappings to the same node: duplicate '%s'", filters[0])
-		}
-		apiPortFilters[filters[0]] = struct{}{}
-
-		// parse the port mapping
-		exposeAPI, err := cliutil.ParseAPIPort(apiPortString)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		// error out on duplicates
-		ipPort := fmt.Sprintf("%s:%s", exposeAPI.HostIP, exposeAPI.Port)
-		if _, exists := ipPortCombinations[ipPort]; exists {
-			log.Fatalf("Duplicate IP:PORT combination '%s' for the Api Port is not allowed", ipPort)
-		}
-		ipPortCombinations[ipPort] = struct{}{}
-
-		// add to map
-		exposeAPIToFiltersMap[exposeAPI] = filters
-	}
-
-	// --lb-port
-	lbPort, err := cmd.Flags().GetString("lb-port")
+	// parse the port mapping
+	exposeAPI, err := cliutil.ParseAPIPort(apiPort)
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	// --datastore-endpoint
-	datastoreEndpoint, err := cmd.Flags().GetString("datastore-endpoint")
-	if err != nil {
-		log.Fatalln(err)
+	if exposeAPI.Host == "" {
+		exposeAPI.Host = k3d.DefaultAPIHost
 	}
-	if datastoreEndpoint != "" {
-		log.Fatalln("Using an external datastore for HA clusters is not yet supported.")
+	if exposeAPI.HostIP == "" {
+		exposeAPI.HostIP = k3d.DefaultAPIHost
 	}
 
 	// --volume
@@ -311,10 +306,11 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts 
 	 ********************/
 
 	cluster := &k3d.Cluster{
-		Name:              args[0], // TODO: validate name0
+		Name:              clustername,
 		Network:           network,
 		Secret:            secret,
 		CreateClusterOpts: createClusterOpts,
+		ExposeAPI:         exposeAPI,
 	}
 
 	// generate list of nodes
@@ -332,14 +328,14 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts 
 			MasterOpts: k3d.MasterOpts{},
 		}
 
-		// TODO: by default, we don't expose an PI port, even if we only have a single master: should we change that?
+		// TODO: by default, we don't expose an API port: should we change that?
 		// -> if we want to change that, simply add the exposeAPI struct here
 
 		// first master node will be init node if we have more than one master specified but no external datastore
-		if i == 0 && masterCount > 1 && datastoreEndpoint == "" {
+		if i == 0 && masterCount > 1 {
 			node.MasterOpts.IsInit = true
 			cluster.InitNode = &node
-		} // TODO: enable external datastore as well
+		}
 
 		// append node to list
 		cluster.Nodes = append(cluster.Nodes, &node)
@@ -357,20 +353,6 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts 
 		}
 
 		cluster.Nodes = append(cluster.Nodes, &node)
-	}
-
-	// add masterOpts
-	for exposeAPI, filters := range exposeAPIToFiltersMap {
-		nodes, err := cliutil.FilterNodes(cluster.Nodes, filters)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		for _, node := range nodes {
-			if node.Role != k3d.MasterRole {
-				log.Fatalf("Node returned by filters '%+v' for exposing the API is not a master node", filters)
-			}
-			node.MasterOpts.ExposeAPI = exposeAPI
-		}
 	}
 
 	// append volumes
@@ -401,15 +383,7 @@ func parseCreateClusterCmd(cmd *cobra.Command, args []string, createClusterOpts 
 	/**********************
 	 * Utility Containers *
 	 **********************/
+	// ...
 
-	// TODO: create load balancer and other util containers // TODO: for now, this will only work with the docker provider (?) -> can replace dynamic docker lookup with static traefik config (?)
-	if masterCount > 1 && !createClusterOpts.DisableLoadbalancer { // TODO: add traefik to the same network and add traefik labels to the master node containers
-		log.Debugln("Creating LB in front of master nodes")
-		cluster.MasterLoadBalancer = &k3d.ClusterLoadbalancer{
-			Image:       k3d.DefaultLBImage,
-			ExposedPort: lbPort,
-		}
-	}
-
-	return runtime, cluster
+	return cluster
 }

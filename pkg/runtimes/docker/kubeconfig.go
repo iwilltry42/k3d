@@ -39,6 +39,7 @@ func (d Docker) GetKubeconfig(node *k3d.Node) (io.ReadCloser, error) {
 		log.Errorln("Failed to create docker client")
 		return nil, err
 	}
+	defer docker.Close()
 
 	container, err := getNodeContainer(node)
 	if err != nil {

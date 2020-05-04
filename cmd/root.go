@@ -24,6 +24,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"strings"
 
@@ -35,10 +36,12 @@ import (
 	"github.com/rancher/k3d/cmd/load"
 	"github.com/rancher/k3d/cmd/start"
 	"github.com/rancher/k3d/cmd/stop"
+	"github.com/rancher/k3d/pkg/runtimes"
 
 	"github.com/rancher/k3d/version"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/writer"
 )
 
 // RootFlags describes a struct that holds flags that can be set on root level of the command
@@ -70,7 +73,7 @@ func Execute() {
 }
 
 func init() {
-	cobra.OnInitialize(initLogging)
+	cobra.OnInitialize(initLogging, initRuntime)
 
 	// add persistent flags (present to all subcommands)
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.k3d/config.yaml)")
@@ -108,10 +111,41 @@ func initLogging() {
 			log.SetLevel(log.DebugLevel)
 		case "WARN":
 			log.SetLevel(log.WarnLevel)
+		case "ERROR":
+			log.SetLevel(log.ErrorLevel)
 		default:
 			log.SetLevel(log.InfoLevel)
 		}
 	}
+	log.SetOutput(ioutil.Discard)
+	log.AddHook(&writer.Hook{
+		Writer: os.Stderr,
+		LogLevels: []log.Level{
+			log.PanicLevel,
+			log.FatalLevel,
+			log.ErrorLevel,
+			log.WarnLevel,
+		},
+	})
+	log.AddHook(&writer.Hook{
+		Writer: os.Stdout,
+		LogLevels: []log.Level{
+			log.InfoLevel,
+			log.DebugLevel,
+		},
+	})
+	log.SetFormatter(&log.TextFormatter{
+		ForceColors: true,
+	})
+}
+
+func initRuntime() {
+	runtime, err := runtimes.GetRuntime(flags.runtime)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	runtimes.SelectedRuntime = runtime
+	log.Debugf("Selected runtime is '%T'", runtimes.SelectedRuntime)
 }
 
 // Completion
@@ -129,7 +163,7 @@ func NewCmdCompletion() *cobra.Command {
 		Use:   "completion SHELL",
 		Short: "Generate completion scripts for [bash, zsh, powershell | psh]",
 		Long:  `Generate completion scripts for [bash, zsh, powershell | psh]`,
-		Args:  cobra.ExactArgs(1), // TODO: add support for 0 args = auto detection
+		Args:  cobra.ExactArgs(1), // TODO: NewCmdCompletion: add support for 0 args = auto detection
 		Run: func(cmd *cobra.Command, args []string) {
 			if f, ok := completionFunctions[args[0]]; ok {
 				if err := f(os.Stdout); err != nil {

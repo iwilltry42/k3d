@@ -39,6 +39,9 @@
       - --no-headers
     - kubeconfig NAME
       - --output
+      - --overwrite
+      - --switch
+      - --update
   - start
     - cluster NAME
       - --all
@@ -72,7 +75,7 @@
     - --env                       -> planned
     - --label                     -> planned
     - --workers                   -> implemented
-    - --auto-restart              -> planned
+    - --auto-restart              -> dropped (docker's `unless-stopped` is set by default)
     - --enable-registry           -> planned (possible consolidation into less registry-related commands?)
     - --registry-name             -> TBD
     - --registry-port             -> TBD
@@ -105,7 +108,7 @@
   - get-kubeconfig                -> `k3d get kubeconfig CLUSTERNAME`
     - --name                      -> dropped, implemented as arg
     - --all                       -> planned
-    - --overwrite                 -> planned
+    - --overwrite                 -> implemented
   - import-images                 -> `k3d load image [--cluster CLUSTERNAME] [--keep] IMAGES`
     - --name                      -> implemented as `--cluster`
     - --no-remove                 -> implemented as `--keep`
@@ -201,9 +204,14 @@ Here's how k3d types should translate to a runtime type:
 
 ## [WIP] Multi-Master Setup
 
-- if `--masters` > 1 deploy a load-balancer in front of them as an extra container
+- to make this possible, we always deploy a load-balancer (nginx) in front of the master nodes as an extra container 
   - consider that in the kubeconfig file and `--tls-san`
-  - make this the default, but provide a `--no-lb` flag
+
+### Variants
+
+- [x] embedded datastore (dqlite)
+  - if `--masters` > 1 deploy a load-balancer in front of them as an extra container
+- [ ] external datastore
 
 ## [DONE] Keep State in Docker Labels
 
@@ -222,7 +230,7 @@ Here's how k3d types should translate to a runtime type:
   - let's you set tools container version
     - `k3d tools --image k3d-tools:v2 import-images`
 - add `k3d create --image-vol NAME` flag to re-use existing image volume
-  - will add `k3d.volumes.imagevolume.external: true` label to nodes
+  - will add `k3d.volumes.imageVolume.external: true` label to nodes
     - should not be deleted with cluster
   - possibly add `k3d create volume` and `k3d create network` to create external volumes/networks?
 
@@ -256,4 +264,3 @@ Here's how k3d types should translate to a runtime type:
 ### Possible Enhancements
 
 - [!] remove/add nodes -> needs to remove line in `/var/lib/rancher/k3s/server/cred/node-passwd` for the deleted node
-- directly use cluster struct in `createClusterCmd` filled by flag values

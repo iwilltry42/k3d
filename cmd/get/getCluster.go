@@ -49,16 +49,16 @@ func NewCmdGetCluster() *cobra.Command {
 		Args:    cobra.MinimumNArgs(0), // 0 or more; 0 = all
 		Run: func(cmd *cobra.Command, args []string) {
 			log.Debugln("get cluster called")
-			c, rt, headersOff := parseGetClusterCmd(cmd, args)
+			clusters, headersOff := parseGetClusterCmd(cmd, args)
 			var existingClusters []*k3d.Cluster
-			if c == nil { // Option a)  no cluster name specified -> get all clusters
-				found, err := cluster.GetClusters(rt)
+			if clusters == nil { // Option a)  no cluster name specified -> get all clusters
+				found, err := cluster.GetClusters(runtimes.SelectedRuntime)
 				if err != nil {
 					log.Fatalln(err)
 				}
 				existingClusters = append(existingClusters, found...)
 			} else { // Option b) cluster name specified -> get specific cluster
-				found, err := cluster.GetCluster(c, rt)
+				found, err := cluster.GetCluster(clusters, runtimes.SelectedRuntime)
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -78,16 +78,7 @@ func NewCmdGetCluster() *cobra.Command {
 	return cmd
 }
 
-func parseGetClusterCmd(cmd *cobra.Command, args []string) (*k3d.Cluster, runtimes.Runtime, bool) {
-	// --runtime
-	rt, err := cmd.Flags().GetString("runtime")
-	if err != nil {
-		log.Fatalln("No runtime specified")
-	}
-	runtime, err := runtimes.GetRuntime(rt)
-	if err != nil {
-		log.Fatalln(err)
-	}
+func parseGetClusterCmd(cmd *cobra.Command, args []string) (*k3d.Cluster, bool) {
 
 	// --no-headers
 	headersOff, err := cmd.Flags().GetBool("no-headers")
@@ -97,12 +88,12 @@ func parseGetClusterCmd(cmd *cobra.Command, args []string) (*k3d.Cluster, runtim
 
 	// Args = cluster name
 	if len(args) == 0 {
-		return nil, runtime, headersOff
+		return nil, headersOff
 	}
 
-	cluster := &k3d.Cluster{Name: args[0]} // TODO: validate name first?
+	cluster := &k3d.Cluster{Name: args[0]}
 
-	return cluster, runtime, headersOff
+	return cluster, headersOff
 }
 
 func printClusters(clusters []*k3d.Cluster, headersOff bool) {
@@ -111,7 +102,7 @@ func printClusters(clusters []*k3d.Cluster, headersOff bool) {
 	defer tabwriter.Flush()
 
 	if !headersOff {
-		headers := []string{"NAME", "MASTERS", "WORKERS"} // TODO: add status
+		headers := []string{"NAME", "MASTERS", "WORKERS"} // TODO: getCluster: add status column
 		_, err := fmt.Fprintf(tabwriter, "%s\n", strings.Join(headers, "\t"))
 		if err != nil {
 			log.Fatalln("Failed to print headers")

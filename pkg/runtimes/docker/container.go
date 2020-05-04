@@ -30,6 +30,7 @@ import (
 	"os"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	k3d "github.com/rancher/k3d/pkg/types"
@@ -48,22 +49,26 @@ func createContainer(dockerNode *NodeInDocker, name string) error {
 		log.Errorln("Failed to create docker client")
 		return err
 	}
+	defer docker.Close()
 
 	// create container
-create: // label used to restart creation process, if we're only missing the image
-	resp, err := docker.ContainerCreate(ctx, &dockerNode.ContainerConfig, &dockerNode.HostConfig, &dockerNode.NetworkingConfig, name)
-	if err != nil {
-		if client.IsErrNotFound(err) {
-			if err := pullImage(&ctx, docker, dockerNode.ContainerConfig.Image); err != nil {
-				log.Errorln("Failed to create container")
-				return err
+	var resp container.ContainerCreateCreatedBody
+	for {
+		resp, err = docker.ContainerCreate(ctx, &dockerNode.ContainerConfig, &dockerNode.HostConfig, &dockerNode.NetworkingConfig, name)
+		if err != nil {
+			if client.IsErrNotFound(err) {
+				if err := pullImage(&ctx, docker, dockerNode.ContainerConfig.Image); err != nil {
+					log.Errorln("Failed to create container")
+					return err
+				}
+				continue
 			}
-			goto create
+			log.Errorln("Failed to create container")
+			return err
 		}
-		log.Errorln("Failed to create container")
-		return err
+		log.Debugln("Created container", resp.ID)
+		break
 	}
-	log.Debugln("Created container", resp.ID)
 
 	// start container
 	if err := docker.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
@@ -84,6 +89,7 @@ func removeContainer(ID string) error {
 		log.Errorln("Failed to create docker client")
 		return err
 	}
+	defer docker.Close()
 
 	// (1) define remove options
 	options := types.ContainerRemoveOptions{
@@ -137,6 +143,7 @@ func getNodeContainer(node *k3d.Node) (*types.Container, error) {
 		log.Errorln("Failed to create docker client")
 		return nil, err
 	}
+	defer docker.Close()
 
 	// (1) list containers which have the default k3d labels attached
 	filters := filters.NewArgs()

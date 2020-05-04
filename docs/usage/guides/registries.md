@@ -1,0 +1,5 @@
+# Registries
+
+## Registries configuration file
+
+...

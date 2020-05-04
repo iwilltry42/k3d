@@ -24,6 +24,7 @@ package cluster
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -111,6 +112,8 @@ func CreateNode(node *k3d.Node, runtime runtimes.Runtime) error {
 		labels[k] = v
 	}
 	node.Labels = labels
+	// second most important: the node role label
+	node.Labels["k3d.role"] = string(node.Role)
 
 	// ### Environment ###
 	node.Env = append(node.Env, k3d.DefaultNodeEnv...) // append default node env vars
@@ -125,8 +128,6 @@ func CreateNode(node *k3d.Node, runtime runtimes.Runtime) error {
 			return err
 		}
 		log.Debugf("spec = %+v\n", node)
-	} else {
-		return fmt.Errorf("Unknown node role '%s'", node.Role)
 	}
 
 	/*
@@ -151,7 +152,6 @@ func DeleteNode(runtime runtimes.Runtime, node *k3d.Node) error {
 // patchWorkerSpec adds worker node specific settings to a node
 func patchWorkerSpec(node *k3d.Node) error {
 	node.Args = append([]string{"agent"}, node.Args...)
-	node.Labels["k3d.role"] = string(k3d.WorkerRole) // TODO: maybe put those in a global var DefaultWorkerNodeSpec?
 	return nil
 }
 
@@ -161,22 +161,14 @@ func patchMasterSpec(node *k3d.Node) error {
 	// command / arguments
 	node.Args = append([]string{"server"}, node.Args...)
 
-	// role label
-	node.Labels["k3d.role"] = string(k3d.MasterRole) // TODO: maybe put those in a global var DefaultMasterNodeSpec?
+	// Add labels and TLS SAN for the exposed API
+	// FIXME: For now, the labels concerning the API on the master nodes are only being used for configuring the kubeconfig
+	node.Labels["k3d.master.api.hostIP"] = node.MasterOpts.ExposeAPI.HostIP // TODO: maybe get docker machine IP here
+	node.Labels["k3d.master.api.host"] = node.MasterOpts.ExposeAPI.Host
+	node.Labels["k3d.master.api.port"] = node.MasterOpts.ExposeAPI.Port
 
-	// extra settings to expose the API port (if wanted)
-	if node.MasterOpts.ExposeAPI.Port != "" {
-		if node.MasterOpts.ExposeAPI.Host == "" {
-			node.MasterOpts.ExposeAPI.Host = "0.0.0.0"
-		}
-		node.Labels["k3d.master.api.hostIP"] = node.MasterOpts.ExposeAPI.HostIP // TODO: maybe get docker machine IP here
+	node.Args = append(node.Args, "--tls-san", node.MasterOpts.ExposeAPI.Host) // add TLS SAN for non default host name
 
-		node.Labels["k3d.master.api.host"] = node.MasterOpts.ExposeAPI.Host
-
-		node.Args = append(node.Args, "--tls-san", node.MasterOpts.ExposeAPI.Host) // add TLS SAN for non default host name
-		node.Labels["k3d.master.api.port"] = node.MasterOpts.ExposeAPI.Port
-		node.Ports = append(node.Ports, fmt.Sprintf("%s:%s:6443/tcp", node.MasterOpts.ExposeAPI.Host, node.MasterOpts.ExposeAPI.Port)) // TODO: get '6443' from defaultport variable
-	}
 	return nil
 }
 
@@ -203,16 +195,13 @@ func GetNode(node *k3d.Node, runtime runtimes.Runtime) (*k3d.Node, error) {
 }
 
 // WaitForNodeLogMessage follows the logs of a node container and returns if it finds a specific line in there (or timeout is reached)
-func WaitForNodeLogMessage(runtime runtimes.Runtime, node *k3d.Node, message string, timeout time.Duration) error {
-	start := time.Now()
+func WaitForNodeLogMessage(ctx context.Context, runtime runtimes.Runtime, node *k3d.Node, message string) error {
 	for {
-
-		// return error if we've reached the timeout without having read the message
-		if timeout != 0 && time.Now().After(start.Add(timeout)) {
-			return fmt.Errorf("Timed out waiting for log message '%s' from node '%s'", message, node.Name)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
-
-		log.Debugf("Waiting for log message '%s' from node '%s'...", message, node.Name)
 
 		// read the logs
 		out, err := runtime.GetNodeLogs(node)
@@ -234,7 +223,8 @@ func WaitForNodeLogMessage(runtime runtimes.Runtime, node *k3d.Node, message str
 		if nRead > 0 && strings.Contains(output, message) {
 			break
 		}
-		time.Sleep(1 * time.Second)
 	}
+	time.Sleep(500 * time.Millisecond) // wait for half a second to avoid overloading docker (error `socket: too many open files`)
+	log.Debugf("Finished waiting for log message '%s' from node '%s'", message, node.Name)
 	return nil
 }

@@ -45,10 +45,20 @@ func LoadImagesIntoCluster(runtime runtimes.Runtime, images []string, cluster *k
 		return fmt.Errorf("Failed to get network for cluster '%s'", cluster.Name)
 	}
 
-	if _, ok := cluster.Nodes[0].Labels["k3d.cluster.volumes.imagevolume"]; !ok { // TODO: add failover solution
+	var imageVolume string
+	var ok bool
+	for _, node := range cluster.Nodes {
+		if node.Role == k3d.MasterRole || node.Role == k3d.WorkerRole {
+			if imageVolume, ok = node.Labels["k3d.cluster.imageVolume"]; ok {
+				break
+			}
+		}
+	}
+	if imageVolume == "" {
 		return fmt.Errorf("Failed to find image volume for cluster '%s'", cluster.Name)
 	}
-	imageVolume := cluster.Nodes[0].Labels["k3d.cluster.volumes.imagevolume"]
+
+	log.Debugf("Attaching to cluster's image volume '%s'", imageVolume)
 
 	// create tools node to export images
 	log.Infoln("Starting k3d-tools node...")
@@ -76,15 +86,18 @@ func LoadImagesIntoCluster(runtime runtimes.Runtime, images []string, cluster *k
 	log.Infoln("Importing images into nodes...")
 	var importWaitgroup sync.WaitGroup
 	for _, node := range cluster.Nodes {
-		importWaitgroup.Add(1)
-		go func(node *k3d.Node, wg *sync.WaitGroup) {
-			log.Infof("Importing images into node '%s'...", node.Name)
-			if err := runtime.ExecInNode(node, []string{"ctr", "image", "import", tarName}); err != nil {
-				log.Errorf("Failed to import images in node '%s'", node.Name)
-				log.Errorln(err)
-			}
-			wg.Done()
-		}(node, &importWaitgroup)
+		// only import image in master and worker nodes (i.e. ignoring auxiliary nodes like the master loadbalancer)
+		if node.Role == k3d.MasterRole || node.Role == k3d.WorkerRole {
+			importWaitgroup.Add(1)
+			go func(node *k3d.Node, wg *sync.WaitGroup) {
+				log.Infof("Importing images into node '%s'...", node.Name)
+				if err := runtime.ExecInNode(node, []string{"ctr", "image", "import", tarName}); err != nil {
+					log.Errorf("Failed to import images in node '%s'", node.Name)
+					log.Errorln(err)
+				}
+				wg.Done()
+			}(node, &importWaitgroup)
+		}
 	}
 	importWaitgroup.Wait()
 
